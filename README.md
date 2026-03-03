@@ -40,7 +40,7 @@ A native macOS Voice-to-Text application built with Python. It uses Apple's on-d
 
 1.  **Run the application**:
     ```bash
-    ./venv/bin/python app.py
+    ./venv/bin/python -m src.main
     ```
 
 2.  **Grant Permissions**:
@@ -55,9 +55,9 @@ A native macOS Voice-to-Text application built with Python. It uses Apple's on-d
     - Speak!
     - Press **Right Option** again to stop.
 
-## How it Works (`app.py`)
+## How it Works (`src/main.py`)
 
-The application combines several libraries to bridge Python with macOS native APIs:
+The application combines several libraries to bridge Python with macOS native APIs, organized into modular components:
 
 ### 1. Audio Capture (`sounddevice`)
 Instead of using PyObjC's complex audio engine, we use `sounddevice` (based on PortAudio) to capture raw audio samples from the microphone. This ensures broad compatibility with Bluetooth headsets and external mics.
