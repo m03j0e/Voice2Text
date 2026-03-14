@@ -27,6 +27,11 @@ class Recognizer:
     def start(self):
         logger.debug("Initializing SFSpeechRecognizer...")
         self.request = SFSpeechAudioBufferRecognitionRequest.new()
+        
+        # Enable Apple's on-device ML/Apple Intelligence punctuation
+        if hasattr(self.request, "setAddsPunctuation_"):
+            self.request.setAddsPunctuation_(True)
+            
         self.recognition_task = self.recognizer.recognitionTaskWithRequest_resultHandler_(
             self.request,
             self.recognition_result_handler
