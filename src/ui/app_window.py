@@ -1,6 +1,7 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, simpledialog, messagebox
 import queue
+import threading
 import sounddevice as sd
 import numpy as np
 from src.utils.logger import logger
@@ -8,12 +9,15 @@ from src.audio.capture import get_audio_devices, AudioCapture
 from src.speech.recognizer import Recognizer
 from src.input.hotkeys import HotkeyListener
 from src.utils.text_processing import remove_filler_words
+from src.ai.gemini import GeminiClient
+from src.ui.floating_indicator import FloatingIndicator
+from src.utils.prompts import PromptManager
 
 class AppWindow:
     def __init__(self, root, outputs=None):
         self.root = root
         self.root.title("Voice to Text")
-        self.root.geometry("500x300")
+        self.root.geometry("600x450")
 
         self.available_devices = get_audio_devices()
         self.selected_device_name = tk.StringVar()
@@ -22,6 +26,14 @@ class AppWindow:
         self.outputs = outputs or []
         self.inject_var = tk.BooleanVar(value=False)
         self.obsidian_var = tk.BooleanVar(value=False)
+
+        # AI Feature Vars
+        self.ai_var = tk.BooleanVar(value=False)
+        self.prompt_var = tk.StringVar()
+
+        self.ai_client = GeminiClient()
+        self.prompt_manager = PromptManager()
+        self.floating_indicator = FloatingIndicator(self.root)
 
         self.audio_capture = None
         self.recognizer = Recognizer(result_callback=self.on_recognition_result)
@@ -61,7 +73,7 @@ class AppWindow:
         self.device_combo.pack(fill="x", pady=5)
 
         # Output options
-        frame_options = ttk.Frame(self.root)
+        frame_options = ttk.LabelFrame(self.root, text="Output Options", padding=10)
         frame_options.pack(fill="x", padx=10, pady=5)
 
         chk_inject = ttk.Checkbutton(frame_options, text="Inject Text into Active App", variable=self.inject_var)
@@ -69,6 +81,28 @@ class AppWindow:
 
         chk_obsidian = ttk.Checkbutton(frame_options, text="Export to Obsidian", variable=self.obsidian_var)
         chk_obsidian.pack(side="left", padx=5)
+
+        # AI Polishing
+        frame_ai = ttk.LabelFrame(self.root, text="AI Polishing (Google Gemini)", padding=10)
+        frame_ai.pack(fill="x", padx=10, pady=5)
+
+        ai_top_frame = ttk.Frame(frame_ai)
+        ai_top_frame.pack(fill="x")
+
+        chk_ai = ttk.Checkbutton(ai_top_frame, text="Enable AI Polish", variable=self.ai_var, command=self.on_ai_toggle)
+        chk_ai.pack(side="left", padx=5)
+
+        btn_apikey = ttk.Button(ai_top_frame, text="Set API Key", command=self.prompt_api_key)
+        btn_apikey.pack(side="right", padx=5)
+
+        ai_bot_frame = ttk.Frame(frame_ai)
+        ai_bot_frame.pack(fill="x", pady=5)
+        lbl_prompt = ttk.Label(ai_bot_frame, text="Prompt:")
+        lbl_prompt.pack(side="left", padx=5)
+
+        self.prompt_combo = ttk.Combobox(ai_bot_frame, textvariable=self.prompt_var, values=self.prompt_manager.prompts)
+        self.prompt_combo.set(self.prompt_manager.default_prompt)
+        self.prompt_combo.pack(side="left", fill="x", expand=True, padx=5)
 
         # Status
         self.status_label = ttk.Label(self.root, text="Status: Ready (Press Right Option to Record)", foreground="gray")
@@ -78,8 +112,22 @@ class AppWindow:
         frame_text = ttk.LabelFrame(self.root, text="Transcription", padding=10)
         frame_text.pack(fill="both", expand=True, padx=10, pady=5)
 
-        self.text_area = tk.Text(frame_text, height=10, wrap="word")
+        self.text_area = tk.Text(frame_text, height=8, wrap="word")
         self.text_area.pack(fill="both", expand=True)
+
+    def prompt_api_key(self):
+        key = simpledialog.askstring("API Key", "Enter Google Gemini API Key:", show='*')
+        if key:
+            success = self.ai_client.set_api_key(key)
+            if success:
+                messagebox.showinfo("Success", "API Key saved securely.")
+            else:
+                messagebox.showerror("Error", "Failed to save API Key.")
+
+    def on_ai_toggle(self):
+        if self.ai_var.get() and not self.ai_client.has_key:
+            messagebox.showwarning("API Key Required", "Please set your Gemini API Key first.")
+            self.ai_var.set(False)
 
     def toggle_recording(self):
         logger.debug("Right Option pressed")
@@ -101,6 +149,9 @@ class AppWindow:
         for output in self.outputs:
             output.reset()
 
+        if self.ai_var.get():
+            self.floating_indicator.show()
+
         try:
             device_name = self.selected_device_name.get()
             device_id = self.available_devices.get(device_name)
@@ -116,6 +167,8 @@ class AppWindow:
             logger.error(f"Error starting recognition: {e}", exc_info=True)
             self.is_recording = False
             self.queue.put(("status", f"Error: {e}", "red"))
+            if self.ai_var.get():
+                self.floating_indicator.hide()
 
     def stop_recording(self):
         if not self.is_recording:
@@ -130,9 +183,36 @@ class AppWindow:
         self.recognizer.stop()
         self.is_recording = False
 
-        # Dispatch final event
-        self.queue.put(("final",))
-        self.queue.put(("status", "Status: Ready (Press Right Option to Record)", "gray"))
+        if self.ai_var.get():
+            self.floating_indicator.hide()
+            self.queue.put(("status", "Status: Polishing with AI...", "blue"))
+
+            # Save prompt if custom
+            current_prompt = self.prompt_var.get()
+            self.prompt_manager.save(current_prompt)
+            # Update combobox values
+            self.prompt_combo['values'] = self.prompt_manager.prompts
+
+            # Dispatch to background thread for API call
+            threading.Thread(target=self.polish_and_dispatch, args=(self.current_text, current_prompt)).start()
+        else:
+            # Standard real-time flow
+            self.queue.put(("final", self.current_text))
+            self.queue.put(("status", "Status: Ready (Press Right Option to Record)", "gray"))
+
+    def polish_and_dispatch(self, raw_text, prompt):
+        try:
+            if not raw_text.strip():
+                self.queue.put(("final_ai", raw_text))
+                return
+
+            polished_text = self.ai_client.polish_text(raw_text, prompt)
+            self.queue.put(("final_ai", polished_text))
+        except Exception as e:
+            logger.error(f"Failed AI polish thread: {e}")
+            self.queue.put(("final_ai", raw_text))
+        finally:
+            self.queue.put(("status", "Status: Ready (Press Right Option to Record)", "gray"))
 
     def on_audio_data(self, numpy_data, status):
         if status:
@@ -140,23 +220,6 @@ class AppWindow:
 
         if not self.is_recording:
             return
-
-        # Check amplitude
-        amplitude = np.max(np.abs(numpy_data))
-        if not hasattr(self, '_silence_counter'):
-            self._silence_counter = 0
-
-        if amplitude == 0:
-            self._silence_counter += 1
-            if self._silence_counter % 50 == 0:
-                logger.debug(f"Audio is silent (Max Amp: 0.0) - Frame {self._silence_counter}")
-        else:
-            self._silence_counter = 0
-            if not hasattr(self, '_signal_log_counter'):
-                self._signal_log_counter = 0
-            self._signal_log_counter += 1
-            if self._signal_log_counter % 50 == 0:
-                 logger.debug(f"Audio Signal Detected! Max Amp: {amplitude}")
 
         self.recognizer.process_audio(numpy_data)
 
@@ -179,9 +242,20 @@ class AppWindow:
                     self.text_area.delete("1.0", tk.END)
                     self.text_area.insert(tk.END, new_text)
 
-                    self.dispatch_outputs(new_text, is_final)
+                    # Only inject if AI is OFF
+                    if not self.ai_var.get():
+                        self.dispatch_outputs(new_text, is_final)
                 elif msg_type == "final":
-                    self.dispatch_outputs(self.current_text, True)
+                    final_text = msg[1]
+                    if not self.ai_var.get():
+                        self.dispatch_outputs(final_text, True)
+                elif msg_type == "final_ai":
+                    polished_text = msg[1]
+                    # Update text area with polished text
+                    self.text_area.delete("1.0", tk.END)
+                    self.text_area.insert(tk.END, polished_text)
+                    # For AI, we dump the whole text at once as final
+                    self.dispatch_outputs(polished_text, True)
 
         except queue.Empty:
             pass
