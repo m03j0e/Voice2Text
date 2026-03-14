@@ -149,8 +149,7 @@ class AppWindow:
         for output in self.outputs:
             output.reset()
 
-        if self.ai_var.get():
-            self.floating_indicator.show()
+        self.floating_indicator.show()
 
         try:
             device_name = self.selected_device_name.get()
@@ -167,8 +166,7 @@ class AppWindow:
             logger.error(f"Error starting recognition: {e}", exc_info=True)
             self.is_recording = False
             self.queue.put(("status", f"Error: {e}", "red"))
-            if self.ai_var.get():
-                self.floating_indicator.hide()
+            self.floating_indicator.hide()
 
     def stop_recording(self):
         if not self.is_recording:
@@ -183,8 +181,9 @@ class AppWindow:
         self.recognizer.stop()
         self.is_recording = False
 
+        self.floating_indicator.hide()
+
         if self.ai_var.get():
-            self.floating_indicator.hide()
             self.queue.put(("status", "Status: Polishing with AI...", "blue"))
 
             # Save prompt if custom
