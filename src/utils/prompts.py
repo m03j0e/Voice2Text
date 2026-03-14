@@ -6,7 +6,11 @@ class PromptManager:
     def __init__(self):
         self.filename = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts.json")
         self.default_prompt = "Fix spelling and grammar."
-        self.prompts = [self.default_prompt]
+        self.prompts = [
+            self.default_prompt,
+            "Make the following as an AI prompt.",
+            "Make this more professional."
+        ]
         self._load()
 
     def _load(self):
