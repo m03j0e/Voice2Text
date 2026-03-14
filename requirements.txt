@@ -4,3 +4,6 @@ pyobjc-framework-Cocoa
 pynput
 sounddevice
 numpy
+google-generativeai
+keyring
+Pillow
