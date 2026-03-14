@@ -7,8 +7,11 @@ A native macOS Voice-to-Text application built with Python. It uses Apple's on-d
 - **High Quality Transcription**: Uses macOS native Speech API (SFSpeechRecognizer) for accuracy and language support.
 - **Global Hotkey**: Toggle recording from anywhere using the **Right Option** key.
 - **Text Injection**: Automatically types transcribed text into your active window (TextEdit, Word, Browser, etc.).
-- **Smart Formatting**: Automatically removes common filler words ("um", "uh", "like") and handles capitalization.
-- **Corrections**: intelligently handles backspacing and correction if the transcriber updates its prediction.
+- **Smart Formatting & Punctuation**: Automatically removes common filler words ("um", "uh", "like") and leverages macOS Apple Intelligence/ML to automatically add proper punctuation.
+- **AI Polishing**: Optional integration with Google Gemini API to polish text, fix grammar, or apply custom prompts (e.g., "Make this more professional").
+- **Visual Feedback**: Always-on-top floating indicator shows when you are actively recording.
+- **Obsidian Integration**: Export your transcriptions directly to Obsidian as daily notes.
+- **Corrections**: Intelligently handles backspacing and correction if the transcriber updates its prediction in real-time.
 
 ## Requirements
 
@@ -50,6 +53,8 @@ A native macOS Voice-to-Text application built with Python. It uses Apple's on-d
 3.  **Start Dictating**:
     - Select your microphone from the dropdown.
     - Check "Inject Text into Active App" if you want it to type for you.
+    - Check "Export to Obsidian" to save logs to your Obsidian vault.
+    - Enable "AI Polish" and enter your Gemini API key for advanced text processing.
     - Click inside any other application (e.g., Notes).
     - Press **Right Option** to start recording.
     - Speak!
