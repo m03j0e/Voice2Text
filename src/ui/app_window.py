@@ -57,7 +57,7 @@ class AppWindow:
         from src.ui.floating_indicator import FloatingIndicator
         from src.utils.prompts import PromptManager
         
-        self.ai_client = GeminiClient()
+        self.ai_client = GeminiClient(defer_init=True)
         self.prompt_manager = PromptManager()
         self.floating_indicator = FloatingIndicator(self.root)
         

@@ -3,20 +3,37 @@ import keyring
 from src.utils.logger import logger
 
 class GeminiClient:
-    def __init__(self, service_name="voice2text_mac"):
+    def __init__(self, service_name="voice2text_mac", defer_init=False):
         self.service_name = service_name
-        self._setup_client()
+        self.api_key = None
+        self.client = None
+        self.model_name = 'gemini-3.0-flash'
+        self.has_key = False
+        
+        if not defer_init:
+            self._setup_client()
+
+    def initialize(self):
+        """Manually trigger the keychain fetch and client setup if it was deferred."""
+        if not self.has_key:
+            self._setup_client()
+        return self.has_key
 
     def _setup_client(self):
-        self.api_key = keyring.get_password(self.service_name, "gemini_api_key")
-        if self.api_key:
-            self.client = genai.Client(api_key=self.api_key)
-            self.model_name = 'gemini-3.0-flash'
-            self.has_key = True
-        else:
+        try:
+            self.api_key = keyring.get_password(self.service_name, "gemini_api_key")
+            if self.api_key:
+                self.client = genai.Client(api_key=self.api_key)
+                self.has_key = True
+                logger.debug("Successfully retrieved Gemini API key from keychain.")
+            else:
+                self.client = None
+                self.has_key = False
+                logger.warning("Gemini API key not found in keychain.")
+        except Exception as e:
             self.client = None
             self.has_key = False
-            logger.warning("Gemini API key not found in keyring.")
+            logger.error(f"Error accessing keychain for Gemini API key: {e}")
 
     def set_api_key(self, api_key: str):
         if not api_key:
@@ -26,7 +43,7 @@ class GeminiClient:
             self._setup_client()
             return True
         except Exception as e:
-            logger.error(f"Failed to set API key: {e}")
+            logger.error(f"Failed to save API key to keychain: {e}")
             return False
 
     def polish_text(self, text: str, prompt: str) -> str:
