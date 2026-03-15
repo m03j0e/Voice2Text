@@ -174,9 +174,12 @@ class AppWindow:
                 messagebox.showerror("Error", "Failed to save API Key.")
 
     def on_ai_toggle(self):
-        if self.ai_var.get() and not self.ai_client.has_key:
-            messagebox.showwarning("API Key Required", "Please set your Gemini API Key first.")
-            self.ai_var.set(False)
+        if self.ai_var.get():
+            if not self.ai_client.has_key:
+                success = self.ai_client.initialize()
+                if not success:
+                    messagebox.showwarning("API Key Required", "Please set your Gemini API Key first.")
+                    self.ai_var.set(False)
 
     def toggle_recording(self):
         logger.debug("Right Option pressed")
