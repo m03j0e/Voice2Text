@@ -19,7 +19,9 @@ class AppWindow:
         self.root.title("Voice to Text")
         self.root.geometry("600x450")
 
+        print("DEBUG: About to call get_audio_devices()")
         self.available_devices = get_audio_devices()
+        print("DEBUG: get_audio_devices() finished")
         self.selected_device_name = tk.StringVar()
         self.is_recording = False
         self.queue = queue.Queue()

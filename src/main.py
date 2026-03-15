@@ -14,14 +14,18 @@ def main():
     logger.info("--- Starting Voice2Text ---")
 
     # MUST instantiate Tkinter BEFORE calling macOS native APIs to prevent NSApplication crash
+    print("DEBUG: About to init tk.Tk()")
     root = tk.Tk()
+    print("DEBUG: tk.Tk() initialized")
 
     outputs = [
         KeyboardInjector(),
         ObsidianExporter()
     ]
 
+    print("DEBUG: About to init AppWindow()")
     app = AppWindow(root, outputs=outputs)
+    print("DEBUG: AppWindow() initialized")
     
     # Request microphone/speech auth AFTER all other native/framework initializations
     # This prevents conflicts between Speech framework, Tkinter, and Keyring (Security framework)
