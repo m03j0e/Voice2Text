@@ -9,7 +9,7 @@ from src.audio.capture import get_audio_devices, AudioCapture
 from src.speech.recognizer import Recognizer
 from src.input.hotkeys import HotkeyListener
 from src.utils.text_processing import remove_filler_words
-from src.ai.gemini import GeminiClient
+
 from src.ui.floating_indicator import FloatingIndicator
 from src.utils.prompts import PromptManager
 
