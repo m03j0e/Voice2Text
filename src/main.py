@@ -6,7 +6,7 @@ from src.utils.logger import logger
 import Speech
 
 def request_authorization():
-    def auth_callback(status):
+    def auth_callback(status: int) -> None:
         logger.debug(f"Speech Authorization Status: {status}")
     Speech.SFSpeechRecognizer.requestAuthorization_(auth_callback)
 
@@ -25,7 +25,7 @@ def main():
     
     # Request microphone/speech auth AFTER all other native/framework initializations
     # This prevents conflicts between Speech framework, Tkinter, and Keyring (Security framework)
-    root.after(100, request_authorization)
+    request_authorization()
     
     root.mainloop()
 

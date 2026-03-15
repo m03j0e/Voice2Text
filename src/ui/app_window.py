@@ -45,7 +45,9 @@ class AppWindow:
         self.current_text = ""
 
         self.setup_ui()
-        self.hotkeys.start()
+        
+        # Defer hotkey listener startup to prevent macOS Carbon API trace trap on a background thread.
+        self.root.after(1000, self.hotkeys.start)
 
         # Start checking the queue for GUI updates
         self.root.after(100, self.process_queue)
