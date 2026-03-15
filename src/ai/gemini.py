@@ -11,7 +11,7 @@ class GeminiClient:
         api_key = keyring.get_password(self.service_name, "gemini_api_key")
         if api_key:
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            self.model = genai.GenerativeModel('gemini-3.0-flash')
             self.has_key = True
         else:
             self.model = None
