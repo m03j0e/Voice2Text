@@ -25,7 +25,7 @@ def main():
     
     # Request microphone/speech auth AFTER all other native/framework initializations
     # This prevents conflicts between Speech framework, Tkinter, and Keyring (Security framework)
-    request_authorization()
+    root.after(100, request_authorization)
     
     root.mainloop()
 

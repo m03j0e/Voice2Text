@@ -31,9 +31,13 @@ class AppWindow:
         self.ai_var = tk.BooleanVar(value=False)
         self.prompt_var = tk.StringVar()
 
-        self.ai_client = GeminiClient()
-        self.prompt_manager = PromptManager()
-        self.floating_indicator = FloatingIndicator(self.root)
+        # Defer AI client initialization to avoid trace trap via macOS Security framework during TK startup
+        self.ai_client = None
+        self.prompt_manager = None
+        self.floating_indicator = None
+        
+        # Schedule it once the Tkinter mainloop has safely started
+        self.root.after(50, self._initialize_ai)
 
         self.audio_capture = None
         self.recognizer = Recognizer(result_callback=self.on_recognition_result)
@@ -45,6 +49,20 @@ class AppWindow:
 
         # Start checking the queue for GUI updates
         self.root.after(100, self.process_queue)
+
+    def _initialize_ai(self):
+        from src.ai.gemini import GeminiClient
+        from src.ui.floating_indicator import FloatingIndicator
+        from src.utils.prompts import PromptManager
+        
+        self.ai_client = GeminiClient()
+        self.prompt_manager = PromptManager()
+        self.floating_indicator = FloatingIndicator(self.root)
+        
+        # Update combo box now that prompt manager is loaded
+        if hasattr(self, 'prompt_combo'):
+            self.prompt_combo['values'] = self.prompt_manager.prompts
+            self.prompt_combo.set(self.prompt_manager.default_prompt)
 
     def setup_ui(self):
         # Device Selection
@@ -100,8 +118,7 @@ class AppWindow:
         lbl_prompt = ttk.Label(ai_bot_frame, text="Prompt:")
         lbl_prompt.pack(side="left", padx=5)
 
-        self.prompt_combo = ttk.Combobox(ai_bot_frame, textvariable=self.prompt_var, values=self.prompt_manager.prompts)
-        self.prompt_combo.set(self.prompt_manager.default_prompt)
+        self.prompt_combo = ttk.Combobox(ai_bot_frame, textvariable=self.prompt_var)
         self.prompt_combo.pack(side="left", fill="x", expand=True, padx=5)
 
         # Status
