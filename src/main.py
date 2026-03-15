@@ -12,8 +12,8 @@ def request_authorization():
 
 def main():
     logger.info("--- Starting Voice2Text ---")
-    request_authorization()
 
+    # MUST instantiate Tkinter BEFORE calling macOS native APIs to prevent NSApplication crash
     root = tk.Tk()
 
     outputs = [
@@ -22,6 +22,11 @@ def main():
     ]
 
     app = AppWindow(root, outputs=outputs)
+    
+    # Request microphone/speech auth AFTER all other native/framework initializations
+    # This prevents conflicts between Speech framework, Tkinter, and Keyring (Security framework)
+    request_authorization()
+    
     root.mainloop()
 
 if __name__ == "__main__":
