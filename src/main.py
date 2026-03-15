@@ -3,9 +3,9 @@ from src.ui.app_window import AppWindow
 from src.output.keyboard import KeyboardInjector
 from src.output.obsidian import ObsidianExporter
 from src.utils.logger import logger
-import Speech
 
 def request_authorization():
+    import Speech
     def auth_callback(status: int) -> None:
         logger.debug(f"Speech Authorization Status: {status}")
     Speech.SFSpeechRecognizer.requestAuthorization_(auth_callback)
