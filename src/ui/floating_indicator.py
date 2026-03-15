@@ -37,7 +37,7 @@ class FloatingIndicator:
         # Create a container view for background and styling
         self.container = Cocoa.NSView.alloc().initWithFrame_(Cocoa.NSMakeRect(0, 0, width, height))
         self.container.setWantsLayer_(True)
-        self.container.layer().setBackgroundColor_(Cocoa.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.1, 0.1, 0.1, 0.85).CGColor())
+        self.container.layer().setBackgroundColor_(Cocoa.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.04, 0.04, 0.047, 0.90).CGColor())
         self.container.layer().setCornerRadius_(12.0)
         
         # Add Icon (sloth) if exists
@@ -60,8 +60,8 @@ class FloatingIndicator:
         self.label.setDrawsBackground_(False)
         self.label.setEditable_(False)
         self.label.setSelectable_(False)
-        self.label.setTextColor_(Cocoa.NSColor.whiteColor())
-        self.label.setFont_(Cocoa.NSFont.boldSystemFontOfSize_(15))
+        self.label.setTextColor_(Cocoa.NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.0, 0.33, 1.0))
+        self.label.setFont_(Cocoa.NSFont.fontWithName_size_("Courier-Bold", 15))
         
         self.container.addSubview_(self.label)
         self.panel.contentView().addSubview_(self.container)
