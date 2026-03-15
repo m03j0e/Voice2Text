@@ -67,6 +67,36 @@ class AppWindow:
             self.prompt_combo.set(self.prompt_manager.default_prompt)
 
     def setup_ui(self):
+        # Configure Hacker Outrun style
+        style = ttk.Style(self.root)
+        if 'clam' in style.theme_names():
+            style.theme_use('clam')
+
+        bg_color = "#0a0a0c"
+        fg_color = "#00ff41"
+        accent_color = "#ff0055"
+        select_bg = "#00ffff"
+
+        self.root.configure(bg=bg_color)
+
+        style.configure(".",
+                        background=bg_color,
+                        foreground=fg_color,
+                        fieldbackground=bg_color,
+                        troughcolor=bg_color,
+                        selectbackground=select_bg,
+                        selectforeground=bg_color,
+                        font=("Courier", 12))
+
+        style.configure("TLabelframe", background=bg_color, foreground=accent_color, bordercolor=fg_color)
+        style.configure("TLabelframe.Label", background=bg_color, foreground=accent_color, font=("Courier", 12, "bold"))
+        style.configure("TButton", background=bg_color, foreground=accent_color)
+        style.map("TButton", background=[("active", accent_color)], foreground=[("active", bg_color)])
+        style.configure("TCheckbutton", background=bg_color, foreground=fg_color)
+        style.map("TCheckbutton", background=[("active", bg_color)])
+        style.configure("TCombobox", fieldbackground=bg_color, background=bg_color, foreground=fg_color, selectbackground=select_bg, selectforeground=bg_color)
+        style.configure("TLabel", background=bg_color, foreground=fg_color)
+
         # Device Selection
         frame_device = ttk.LabelFrame(self.root, text="Microphone Selection", padding=10)
         frame_device.pack(fill="x", padx=10, pady=5)
@@ -124,14 +154,14 @@ class AppWindow:
         self.prompt_combo.pack(side="left", fill="x", expand=True, padx=5)
 
         # Status
-        self.status_label = ttk.Label(self.root, text="Status: Ready (Press Right Option to Record)", foreground="gray")
+        self.status_label = ttk.Label(self.root, text="Status: Ready (Press Right Option to Record)", foreground="#00ff41")
         self.status_label.pack(pady=5)
 
         # Output Area
         frame_text = ttk.LabelFrame(self.root, text="Transcription", padding=10)
         frame_text.pack(fill="both", expand=True, padx=10, pady=5)
 
-        self.text_area = tk.Text(frame_text, height=8, wrap="word")
+        self.text_area = tk.Text(frame_text, height=8, wrap="word", bg="#0a0a0c", fg="#00ff41", insertbackground="#ff0055", selectbackground="#00ffff", selectforeground="#0a0a0c", font=("Courier", 12))
         self.text_area.pack(fill="both", expand=True)
 
     def prompt_api_key(self):
@@ -160,7 +190,7 @@ class AppWindow:
             return
 
         logger.debug("Starting recording...")
-        self.queue.put(("status", "Status: Recording... (Press Right Option to Stop)", "red"))
+        self.queue.put(("status", "Status: Recording... (Press Right Option to Stop)", "#ff0055"))
 
         self.is_recording = True
         self.current_text = ""
@@ -184,7 +214,7 @@ class AppWindow:
         except Exception as e:
             logger.error(f"Error starting recognition: {e}", exc_info=True)
             self.is_recording = False
-            self.queue.put(("status", f"Error: {e}", "red"))
+            self.queue.put(("status", f"Error: {e}", "#ff0055"))
             self.floating_indicator.hide()
 
     def stop_recording(self):
@@ -203,7 +233,7 @@ class AppWindow:
         self.floating_indicator.hide()
 
         if self.ai_var.get():
-            self.queue.put(("status", "Status: Polishing with AI...", "blue"))
+            self.queue.put(("status", "Status: Polishing with AI...", "#00ffff"))
 
             # Save prompt if custom
             current_prompt = self.prompt_var.get()
@@ -216,7 +246,7 @@ class AppWindow:
         else:
             # Standard real-time flow
             self.queue.put(("final", self.current_text))
-            self.queue.put(("status", "Status: Ready (Press Right Option to Record)", "gray"))
+            self.queue.put(("status", "Status: Ready (Press Right Option to Record)", "#00ff41"))
 
     def polish_and_dispatch(self, raw_text, prompt):
         try:
@@ -230,7 +260,7 @@ class AppWindow:
             logger.error(f"Failed AI polish thread: {e}")
             self.queue.put(("final_ai", raw_text))
         finally:
-            self.queue.put(("status", "Status: Ready (Press Right Option to Record)", "gray"))
+            self.queue.put(("status", "Status: Ready (Press Right Option to Record)", "#00ff41"))
 
     def on_audio_data(self, numpy_data, status):
         if status:
