@@ -1,7 +1,13 @@
 import os
-import Cocoa
-import objc
-from PIL import Image
+try:
+    import Cocoa
+except ImportError:
+    Cocoa = None
+    objc = None
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 from src.utils.logger import logger
 
 class FloatingIndicator:
@@ -17,6 +23,9 @@ class FloatingIndicator:
         # This guarantees it NEVER steals focus (NSWindowStyleMaskNonactivatingPanel)
         width, height = 180, 70
         # Position 50px from bottom right
+        if Cocoa is None:
+            self.panel = None
+            return
         main_screen = Cocoa.NSScreen.mainScreen()
         if not main_screen:
             logger.error("Could not find main screen for FloatingIndicator!")

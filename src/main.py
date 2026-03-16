@@ -1,14 +1,14 @@
 import tkinter as tk
-from src.ui.app_window import AppWindow
-from src.output.keyboard import KeyboardInjector
-from src.output.obsidian import ObsidianExporter
 from src.utils.logger import logger
 
 def request_authorization():
-    import Speech
-    def auth_callback(status: int) -> None:
-        logger.debug(f"Speech Authorization Status: {status}")
-    Speech.SFSpeechRecognizer.requestAuthorization_(auth_callback)
+    try:
+        import Speech
+        def auth_callback(status: int) -> None:
+            logger.debug(f"Speech Authorization Status: {status}")
+        Speech.SFSpeechRecognizer.requestAuthorization_(auth_callback)
+    except ImportError:
+        logger.warning("Speech framework not available. Skipping authorization.")
 
 def main():
     logger.info("--- Starting Voice2Text ---")
@@ -19,6 +19,11 @@ def main():
     
     # We will initialize outputs and app window, but we delay the native API calls
     logger.info("Initializing context...")
+
+    from src.ui.app_window import AppWindow
+    from src.output.keyboard import KeyboardInjector
+    from src.output.obsidian import ObsidianExporter
+
     outputs = [
         KeyboardInjector(),
         ObsidianExporter()

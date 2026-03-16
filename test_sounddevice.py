@@ -1,5 +1,9 @@
-import sounddevice as sd
-import numpy as np
+try:
+    import sounddevice as sd
+    import numpy as np
+except ImportError:
+    import pytest
+    pytest.skip('macOS only test', allow_module_level=True)
 
 print("Listing Sound Devices:")
 print(sd.query_devices())
