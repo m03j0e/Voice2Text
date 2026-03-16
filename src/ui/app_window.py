@@ -3,10 +3,11 @@ import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox
 import queue
 import threading
-import sounddevice as sd
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
 from src.utils.logger import logger
-from src.audio.capture import get_audio_devices, AudioCapture
 from src.input.hotkeys import HotkeyListener
 from src.utils.text_processing import remove_filler_words
 
@@ -18,7 +19,11 @@ class AppWindow:
         self.root.title("Voice to Text")
         self.root.geometry("600x450")
 
-        self.available_devices = get_audio_devices()
+        try:
+            from src.audio.capture import get_audio_devices
+            self.available_devices = get_audio_devices()
+        except Exception:
+            self.available_devices = {}
         self.selected_device_name = tk.StringVar()
         self.is_recording = False
         self.queue = queue.Queue()
@@ -141,6 +146,7 @@ class AppWindow:
             values = list(self.available_devices.keys())
             self.device_combo['values'] = values
 
+            import sounddevice as sd
             default_index = sd.default.device[0]
             default_name = None
             for name, idx in self.available_devices.items():
@@ -253,13 +259,16 @@ class AppWindow:
         self.floating_indicator.show()
 
         # Audio feedback: start recording
-        os.system("afplay /System/Library/Sounds/Ping.aiff &")
+        import sys
+        if sys.platform == 'darwin':
+            os.system("afplay /System/Library/Sounds/Ping.aiff &")
 
         try:
             device_name = self.selected_device_name.get()
             device_id = self.available_devices.get(device_name)
 
             self.recognizer.start()
+            from src.audio.capture import AudioCapture
             self.audio_capture = AudioCapture(
                 device_id=device_id,
                 callback=self.on_audio_data
@@ -286,7 +295,9 @@ class AppWindow:
         self.is_recording = False
 
         # Audio feedback: stop recording
-        os.system("afplay /System/Library/Sounds/Pop.aiff &")
+        import sys
+        if sys.platform == 'darwin':
+            os.system("afplay /System/Library/Sounds/Pop.aiff &")
         self.btn_toggle.config(text="Start Recording")
 
         self.floating_indicator.hide()

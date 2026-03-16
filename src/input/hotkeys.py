@@ -1,6 +1,5 @@
 import time
 import threading
-from pynput import keyboard
 from src.utils.logger import logger
 
 class HotkeyListener:
@@ -14,12 +13,11 @@ class HotkeyListener:
             return
         
         logger.info("Starting Reliable Toggle Hotkey Listener (pynput) in background thread...")
-        # Start the pynput listener in a separate daemon thread to avoid macOS BPT traps
-        # when initialized from the main Tkinter thread loop
         threading.Thread(target=self._run_listener, daemon=True).start()
 
     def _run_listener(self):
         try:
+            from pynput import keyboard
             self.listener = keyboard.Listener(on_press=self.on_press)
             self.listener.start()
             self.listener.join()
@@ -33,9 +31,9 @@ class HotkeyListener:
 
     def on_press(self, key):
         try:
+            from pynput import keyboard
             if key == keyboard.Key.alt_r:
                 current_time = time.time()
-                # 300ms debounce to prevent double-toggles from a single physical press
                 if current_time - self.last_trigger_time > 0.3:
                     logger.info("Hotkey Toggle Triggered (Right Option)!")
                     if self.callback:

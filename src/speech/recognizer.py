@@ -1,19 +1,23 @@
-import Cocoa
-import AVFoundation
-from AVFoundation import (
-    AVAudioFormat,
-    AVAudioPCMBuffer,
-)
-import Speech
-from Speech import (
-    SFSpeechRecognizer,
-    SFSpeechAudioBufferRecognitionRequest,
-    SFSpeechRecognitionTask,
-)
+try:
+    import Cocoa
+    import AVFoundation
+    from AVFoundation import AVAudioFormat, AVAudioPCMBuffer
+    import Speech
+    from Speech import SFSpeechRecognizer, SFSpeechAudioBufferRecognitionRequest, SFSpeechRecognitionTask
+except ImportError:
+    Cocoa = None
 from src.utils.logger import logger
 
 class Recognizer:
     def __init__(self, samplerate=16000, result_callback=None):
+        if Cocoa is None:
+            self.recognizer = None
+            self.samplerate = samplerate
+            self.result_callback = result_callback
+            self.request = None
+            self.recognition_task = None
+            self.audio_format = None
+            return
         self.recognizer = SFSpeechRecognizer.new()
         self.samplerate = samplerate
         self.result_callback = result_callback

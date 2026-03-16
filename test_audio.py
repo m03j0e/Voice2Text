@@ -1,6 +1,11 @@
 import time
 import sys
-import Cocoa
+try:
+    import Cocoa
+except ImportError:
+    import pytest
+    pytest.skip('macOS only test', allow_module_level=True)
+    Cocoa = type('Dummy', (), {'NSObject': object})
 import AVFoundation
 from AVFoundation import (
     AVCaptureDevice,

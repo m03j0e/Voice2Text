@@ -1,5 +1,11 @@
-from google import genai
-import keyring
+try:
+    from google import genai
+except ImportError:
+    genai = None
+try:
+    import keyring
+except ImportError:
+    keyring = None
 from src.utils.logger import logger
 
 class GeminiClient:
@@ -21,34 +27,49 @@ class GeminiClient:
 
     def _setup_client(self):
         try:
-            self.api_key = keyring.get_password(self.service_name, "gemini_api_key")
-            if self.api_key:
-                self.client = genai.Client(api_key=self.api_key)
-                self.has_key = True
-                logger.debug("Successfully retrieved Gemini API key from keychain.")
+            if keyring is not None:
+                self.api_key = keyring.get_password(self.service_name, "gemini_api_key")
             else:
-                self.client = None
-                self.has_key = False
-                logger.warning("Gemini API key not found in keychain.")
-        except Exception as e:
-            self.client = None
-            self.has_key = False
-            logger.error(f"Error accessing keychain for Gemini API key: {e}")
+                self.api_key = None
 
-    def set_api_key(self, api_key: str):
+            if self.api_key:
+                if genai is not None:
+                    self.client = genai.Client(api_key=self.api_key)
+                else:
+                    self.client = None
+                self.has_key = True
+            else:
+                logger.warning("No Gemini API key found in keychain.")
+                self.has_key = False
+        except Exception as e:
+            logger.error(f"Failed to setup Gemini client: {e}")
+            self.has_key = False
+
+    def set_api_key(self, api_key: str) -> bool:
         if not api_key:
             return False
+
         try:
-            keyring.set_password(self.service_name, "gemini_api_key", api_key)
-            self._setup_client()
+            if keyring is not None:
+                keyring.set_password(self.service_name, "gemini_api_key", api_key)
+            else:
+                return False
+
+            self.api_key = api_key
+            if genai is not None:
+                self.client = genai.Client(api_key=self.api_key)
+            else:
+                self.client = None
+            self.has_key = True
+            logger.info("New Gemini API key securely saved.")
             return True
         except Exception as e:
-            logger.error(f"Failed to save API key to keychain: {e}")
+            logger.error(f"Failed to save Gemini API key: {e}")
             return False
 
     def polish_text(self, text: str, prompt: str) -> str:
         if not self.has_key or not self.client:
-            logger.error("Attempted to polish text without an API key configured.")
+            logger.warning("Gemini Client not initialized or no API key.")
             return text
 
         if not text.strip():
