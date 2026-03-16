@@ -1,3 +1,4 @@
+import os
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox
 import queue
@@ -245,6 +246,9 @@ class AppWindow:
 
         self.floating_indicator.show()
 
+        # Audio feedback: start recording
+        os.system("afplay /System/Library/Sounds/Ping.aiff &")
+
         try:
             device_name = self.selected_device_name.get()
             device_id = self.available_devices.get(device_name)
@@ -274,6 +278,9 @@ class AppWindow:
 
         self.recognizer.stop()
         self.is_recording = False
+
+        # Audio feedback: stop recording
+        os.system("afplay /System/Library/Sounds/Pop.aiff &")
         self.btn_toggle.config(text="Start Recording")
 
         self.floating_indicator.hide()
