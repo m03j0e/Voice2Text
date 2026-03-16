@@ -6,11 +6,9 @@ import sounddevice as sd
 import numpy as np
 from src.utils.logger import logger
 from src.audio.capture import get_audio_devices, AudioCapture
-from src.speech.recognizer import Recognizer
 from src.input.hotkeys import HotkeyListener
 from src.utils.text_processing import remove_filler_words
 
-from src.ui.floating_indicator import FloatingIndicator
 from src.utils.prompts import PromptManager
 
 class AppWindow:
@@ -40,6 +38,7 @@ class AppWindow:
         self.root.after(50, self._initialize_ai)
 
         self.audio_capture = None
+        from src.speech.recognizer import Recognizer
         self.recognizer = Recognizer(result_callback=self.on_recognition_result)
         self.hotkeys = HotkeyListener(callback=self.toggle_recording)
         self.current_text = ""
@@ -54,8 +53,8 @@ class AppWindow:
 
     def _initialize_ai(self):
         from src.ai.gemini import GeminiClient
-        from src.ui.floating_indicator import FloatingIndicator
         from src.utils.prompts import PromptManager
+        from src.ui.floating_indicator import FloatingIndicator
         
         self.ai_client = GeminiClient(defer_init=True)
         self.prompt_manager = PromptManager()
