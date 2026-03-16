@@ -25,26 +25,27 @@ class Recognizer:
         )
 
     def start(self):
-        logger.debug("Initializing SFSpeechRecognizer...")
+        logger.info("Initializing SFSpeechRecognizer...")
         self.request = SFSpeechAudioBufferRecognitionRequest.new()
         
         # Enable Apple's on-device ML/Apple Intelligence punctuation
         if hasattr(self.request, "setAddsPunctuation_"):
             self.request.setAddsPunctuation_(True)
             
+        logger.debug("Creating recognition task...")
         self.recognition_task = self.recognizer.recognitionTaskWithRequest_resultHandler_(
             self.request,
             self.recognition_result_handler
         )
-        logger.debug("Recognition task started")
+        logger.info("Recognition task started.")
 
     def stop(self):
         if self.request:
             self.request.endAudio()
             self.request = None
-        if self.recognition_task:
-            self.recognition_task.cancel()
-            self.recognition_task = None
+        # Do not immediately cancel the task, allow the final result handler to finish
+        # The task will eventually complete on its own after endAudio()
+        self.recognition_task = None
 
     def process_audio(self, numpy_data):
         if not self.request:

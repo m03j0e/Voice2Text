@@ -34,22 +34,29 @@ class AppWindow:
         self.prompt_manager = None
         self.floating_indicator = None
         
-        # Schedule it once the Tkinter mainloop has safely started
-        self.root.after(500, self._initialize_ai)
-
+        # Schedule initialization steps once the Tkinter mainloop has started
         self.audio_capture = None
         self.recognizer = None
         
-        # Schedule everything else with slightly more delay to avoid race conditions with macOS security/UI frameworks
-        self.hotkeys = HotkeyListener(callback=self.toggle_recording)
+        # Schedule initialization
+        self.hotkeys = HotkeyListener(callback=lambda: self.root.after(0, self.toggle_recording))
         self.current_text = ""
         self.setup_ui()
-
+        
+        # Stagger everything
         self.root.after(800, self._initialize_recognizer)
-        self.root.after(1500, self.hotkeys.start)
+        self.root.after(1500, self._initialize_ai)
+        self.root.after(2500, self._safe_start_hotkeys)
 
         # Start checking the queue for GUI updates
         self.root.after(100, self.process_queue)
+
+    def _safe_start_hotkeys(self):
+        try:
+            self.hotkeys.start()
+        except Exception as e:
+            logger.error(f"Failed to start hotkeys: {e}")
+            self.status_label.config(text="Status: Hotkeys Disabled (Check Permissions)", foreground="#ff0055")
 
     def _initialize_recognizer(self):
         logger.info("Initializing Speech Recognizer...")
@@ -61,6 +68,9 @@ class AppWindow:
             logger.error(f"Failed to initialize Speech Recognizer: {e}")
 
     def _initialize_ai(self):
+        if self.ai_client is not None:
+            return  # Already initialized
+            
         logger.info("Initializing AI components...")
         from src.ai.gemini import GeminiClient
         from src.utils.prompts import PromptManager
@@ -84,6 +94,7 @@ class AppWindow:
         logger.info("AI components initialized.")
 
     def setup_ui(self):
+        logger.info("Setting up UI...")
         # Configure Hacker Outrun style
         style = ttk.Style(self.root)
         if 'clam' in style.theme_names():
@@ -170,9 +181,15 @@ class AppWindow:
         self.prompt_combo = ttk.Combobox(ai_bot_frame, textvariable=self.prompt_var)
         self.prompt_combo.pack(side="left", fill="x", expand=True, padx=5)
 
-        # Status
-        self.status_label = ttk.Label(self.root, text="Status: Ready (Press Right Option to Record)", foreground="#00ff41")
-        self.status_label.pack(pady=5)
+        # Status and Controls
+        ctrl_frame = ttk.Frame(self.root)
+        ctrl_frame.pack(fill="x", padx=10)
+
+        self.btn_toggle = ttk.Button(ctrl_frame, text="Start Recording", command=self.toggle_recording)
+        self.btn_toggle.pack(side="left", padx=5)
+
+        self.status_label = ttk.Label(ctrl_frame, text="Status: Ready (Right Option)", foreground="#00ff41")
+        self.status_label.pack(side="left", padx=5)
 
         # Output Area
         frame_text = ttk.LabelFrame(self.root, text="Transcription", padding=10)
@@ -199,18 +216,26 @@ class AppWindow:
                     self.ai_var.set(False)
 
     def toggle_recording(self):
-        logger.debug("Right Option pressed")
+        logger.info("Toggle recording triggered.")
         if self.is_recording:
             self.stop_recording()
+            self.btn_toggle.config(text="Start Recording")
         else:
             self.start_recording()
+            if self.is_recording: # Success
+                self.btn_toggle.config(text="Stop Recording")
 
     def start_recording(self):
         if self.is_recording:
             return
 
-        logger.debug("Starting recording...")
-        self.queue.put(("status", "Status: Recording... (Press Right Option to Stop)", "#ff0055"))
+        if not self.recognizer:
+            logger.warning("Recognizer not yet initialized. Please wait.")
+            self.queue.put(("status", "Status: Initializing Recognizer...", "#ff0055"))
+            return
+
+        logger.info("Starting recording session...")
+        self.queue.put(("status", "Status: Recording...", "#ff0055"))
 
         self.is_recording = True
         self.current_text = ""
@@ -249,6 +274,7 @@ class AppWindow:
 
         self.recognizer.stop()
         self.is_recording = False
+        self.btn_toggle.config(text="Start Recording")
 
         self.floating_indicator.hide()
 
@@ -334,8 +360,13 @@ class AppWindow:
         from src.output.keyboard import KeyboardInjector
         from src.output.obsidian import ObsidianExporter
 
+        logger.debug(f"Dispatching outputs for: {text[:20]}... (is_final={is_final})")
         for output in self.outputs:
-            if isinstance(output, KeyboardInjector) and self.inject_var.get():
-                output.output(text, is_final)
-            elif isinstance(output, ObsidianExporter) and self.obsidian_var.get():
-                output.output(text, is_final)
+            if isinstance(output, KeyboardInjector):
+                if self.inject_var.get():
+                    logger.debug("Dispatching to KeyboardInjector")
+                    output.output(text, is_final)
+            elif isinstance(output, ObsidianExporter):
+                if self.obsidian_var.get():
+                    logger.debug("Dispatching to ObsidianExporter")
+                    output.output(text, is_final)

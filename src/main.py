@@ -13,19 +13,20 @@ def request_authorization():
 def main():
     logger.info("--- Starting Voice2Text ---")
 
-    # Initialize Tkinter first. On macOS, this initializes the NSApplication.
+    logger.info("Instantiating Tk...")
     root = tk.Tk()
+    logger.info("Tk instantiated.")
     
-    # Initialize destinations. 
-    # KeyboardInjector is lazy-initialized to avoid native API conflicts at startup.
+    # We will initialize outputs and app window, but we delay the native API calls
+    logger.info("Initializing context...")
     outputs = [
         KeyboardInjector(),
         ObsidianExporter()
     ]
 
-    # Create the application window.
-    # Most heavy/native initializations are deferred within AppWindow using root.after().
+    logger.info("Creating AppWindow...")
     app = AppWindow(root, outputs=outputs)
+    logger.info("AppWindow created.")
     
     # Request microphone/speech authorization after a short delay to ensure stability.
     root.after(2000, request_authorization)

@@ -14,10 +14,12 @@ def setup_logger(log_file='debug.log'):
     logger.addHandler(fh)
 
     # Console handler
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.INFO)
+    ch = logging.StreamHandler(sys.stderr)
+    ch.setLevel(logging.DEBUG)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
+    
+    logger.info("Logger initialized and handlers added.")
 
     return logger
 
