@@ -1,4 +1,5 @@
 import time
+import threading
 from pynput import keyboard
 from src.utils.logger import logger
 
@@ -12,9 +13,18 @@ class HotkeyListener:
         if self.listener is not None:
             return
         
-        logger.info("Starting Reliable Toggle Hotkey Listener (pynput)...")
-        self.listener = keyboard.Listener(on_press=self.on_press)
-        self.listener.start()
+        logger.info("Starting Reliable Toggle Hotkey Listener (pynput) in background thread...")
+        # Start the pynput listener in a separate daemon thread to avoid macOS BPT traps
+        # when initialized from the main Tkinter thread loop
+        threading.Thread(target=self._run_listener, daemon=True).start()
+
+    def _run_listener(self):
+        try:
+            self.listener = keyboard.Listener(on_press=self.on_press)
+            self.listener.start()
+            self.listener.join()
+        except Exception as e:
+            logger.error(f"Error starting pynput listener: {e}")
 
     def stop(self):
         if self.listener is not None:
