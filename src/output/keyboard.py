@@ -1,5 +1,6 @@
 from pynput import keyboard
 from src.output.base import OutputDestination
+from src.utils.logger import logger
 
 class KeyboardInjector(OutputDestination):
     def __init__(self):
@@ -10,14 +11,21 @@ class KeyboardInjector(OutputDestination):
 
     def _type_fallback(self, text):
         import subprocess
+        logger.debug(f"Attempting AppleScript fallback for: '{text}'")
+        
         # AppleScript 'keystroke' into active application
         # Escaping for AppleScript
         escaped_text = text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\r')
         script = f'tell application "System Events" to keystroke "{escaped_text}"'
         try:
-            subprocess.run(["osascript", "-e", script], check=True, capture_output=True)
+            result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+            if result.returncode != 0:
+                logger.error(f"AppleScript injection failed: {result.stderr.strip()}")
+                return False
+            logger.debug("AppleScript injection successful.")
             return True
         except Exception as e:
+            logger.error(f"Subprocess error in AppleScript: {e}")
             return False
 
     def _get_controller(self):
@@ -25,16 +33,17 @@ class KeyboardInjector(OutputDestination):
             try:
                 from pynput import keyboard
                 self.keyboard_controller = keyboard.Controller()
-            except Exception:
+                logger.debug("Pynput keyboard controller initialized.")
+            except Exception as e:
+                logger.warning(f"Failed to initialize pynput controller: {e}")
                 self.keyboard_controller = None
         return self.keyboard_controller
 
     def output(self, text: str, is_final: bool = False):
         if not text:
             return
-
-        from src.utils.logger import logger
-        logger.debug(f"KeyboardInjector output: '{text}' (final={is_final})")
+        
+        logger.debug(f"KeyboardInjector processing: '{text}' (final={is_final})")
         
         current_len = len(self.last_typed_text)
         common_len = 0
@@ -42,21 +51,29 @@ class KeyboardInjector(OutputDestination):
 
         # Determine common prefix
         for i in range(min_len):
-            if self.last_typed_text[i] != text[i]:
+            if self.last_typed_text[i] == text[i]:
+                common_len += 1
+            else:
                 break
-            common_len += 1
 
         # Backspace execution
         backspaces_needed = current_len - common_len
         controller = self._get_controller()
 
         if backspaces_needed > 0:
-            logger.debug(f"Pressing backspace {backspaces_needed} times")
+            logger.info(f"Injection: Sending {backspaces_needed} backspaces")
+            success = False
             if controller:
-                for _ in range(backspaces_needed):
-                    controller.tap(keyboard.Key.backspace)
-            else:
-                # AppleScript fallback for backspace
+                try:
+                    # Clear last_typed_text temporarily so we don't get recursive loops
+                    for _ in range(backspaces_needed):
+                        controller.tap(keyboard.Key.backspace)
+                    success = True
+                except Exception as e:
+                    logger.warning(f"Pynput backspace failed: {e}")
+            
+            if not success:
+                # AppleScript fallback for backspace (Key code 51 is delete)
                 import subprocess
                 script = f'tell application "System Events" to repeat {backspaces_needed} times\nkey code 51\nend repeat'
                 subprocess.run(["osascript", "-e", script])
@@ -64,13 +81,22 @@ class KeyboardInjector(OutputDestination):
         # Type new characters
         to_type = text[common_len:]
         if to_type:
-            logger.debug(f"Typing: '{to_type}'")
+            logger.info(f"Injection: Typing '{to_type}'")
+            success = False
             if controller:
                 try:
                     controller.type(to_type)
-                except Exception:
-                    self._type_fallback(to_type)
-            else:
-                self._type_fallback(to_type)
+                    success = True
+                    logger.debug("Pynput typing successful.")
+                except Exception as e:
+                    logger.warning(f"Pynput typing failed: {e}")
+            
+            if not success:
+               self._type_fallback(to_type)
 
+        # Update tracking
         self.last_typed_text = text
+        
+        # At the end of a session, we reset the baseline for the next recording
+        if is_final:
+            self.last_typed_text = ""

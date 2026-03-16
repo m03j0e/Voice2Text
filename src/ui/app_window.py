@@ -38,15 +38,15 @@ class AppWindow:
         self.audio_capture = None
         self.recognizer = None
         
-        # Schedule initialization
+        # Initialize hotkey listener in Toggle mode
         self.hotkeys = HotkeyListener(callback=lambda: self.root.after(0, self.toggle_recording))
         self.current_text = ""
         self.setup_ui()
         
         # Stagger everything
         self.root.after(800, self._initialize_recognizer)
-        self.root.after(1500, self._initialize_ai)
-        self.root.after(2500, self._safe_start_hotkeys)
+        self.root.after(1500, self._safe_start_hotkeys)
+        self.root.after(2000, self._initialize_ai)
 
         # Start checking the queue for GUI updates
         self.root.after(100, self.process_queue)
@@ -188,7 +188,7 @@ class AppWindow:
         self.btn_toggle = ttk.Button(ctrl_frame, text="Start Recording", command=self.toggle_recording)
         self.btn_toggle.pack(side="left", padx=5)
 
-        self.status_label = ttk.Label(ctrl_frame, text="Status: Ready (Right Option)", foreground="#00ff41")
+        self.status_label = ttk.Label(ctrl_frame, text="Status: Ready (Hold Right Option)", foreground="#00ff41")
         self.status_label.pack(side="left", padx=5)
 
         # Output Area

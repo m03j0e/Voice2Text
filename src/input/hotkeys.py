@@ -9,26 +9,20 @@ class HotkeyListener:
         self.running = False
         self.thread = None
         self.last_state = False
+        self.last_trigger_time = 0
         
         # Modifier masks
-        # kCGEventFlagMaskAlternate (Option) = 0x00080000
-        self.OPTION_MASK = 0x00080000
-        # Specifically Right Option usually has this bit in the NX_DEVICERIGHTALTBIT
-        # but CGEventSourceFlagsState often just gives the general Alternate mask.
-        
-        # We also keep the key code polling as a backup
-        # 61 is Right Option, 58 is Left Option
+        self.OPTION_MASK = 0x00080000 # kCGEventFlagMaskAlternate
         self.RIGHT_OPTION_KEY = 61
 
     def start(self):
         if self.running:
             return
         
-        logger.info("Starting Global Hotkey Listener (Quartz Flags Polling)...")
+        logger.info("Starting Reliable Toggle Hotkey Listener (Quartz Polling)...")
         self.running = True
         self.thread = threading.Thread(target=self._poll_loop, daemon=True)
         self.thread.start()
-        logger.info("Hotkey Listener started.")
 
     def stop(self):
         self.running = False
@@ -37,31 +31,29 @@ class HotkeyListener:
             self.thread = None
 
     def _poll_loop(self):
-        """Poll the hardware modifier state directly from Quartz."""
+        """Poll the hardware key state to toggle on Press."""
         while self.running:
             try:
-                # Method 1: Check Global Flags (Works best for global modifiers)
-                # kCGEventSourceStateHIDSystemState = 1
-                current_flags = Quartz.CGEventSourceFlagsState(1)
-                
-                # Check if Option (Alternate) is pressed
-                is_option_pressed = bool(current_flags & self.OPTION_MASK)
-                
-                # Method 2: Check specifically for Right Option key code 61
+                # Check for Option flag or specific Right Option hardware key
+                current_flags = Quartz.CGEventSourceFlagsState(1) # HID System State
+                is_option_down = bool(current_flags & self.OPTION_MASK)
                 is_key_61_down = Quartz.CGEventSourceKeyState(1, self.RIGHT_OPTION_KEY)
                 
-                # We trigger if EITHER the right-option key is down OR the alternate flag is active
-                # (You can tune this to be specific to Right Option if needed)
-                is_down = is_option_pressed or is_key_61_down
+                is_down = is_option_down or is_key_61_down
                 
+                # We trigger a toggle on the "Press" edge (False -> True)
                 if is_down and not self.last_state:
-                    logger.info(f"Global Option Key Detected! (Flags: {hex(current_flags)}, Key61: {is_key_61_down})")
-                    if self.callback:
-                        self.callback()
+                    current_time = time.time()
+                    # 300ms debounce to prevent double-toggles from a single physical press
+                    if current_time - self.last_trigger_time > 0.3:
+                        logger.info("Hotkey Toggle Triggered!")
+                        if self.callback:
+                            self.callback()
+                        self.last_trigger_time = current_time
                 
                 self.last_state = is_down
                 
             except Exception as e:
-                logger.error(f"Error in hotkey poll loop: {e}")
+                logger.error(f"Error in hotkey loop: {e}")
             
-            time.sleep(0.05)
+            time.sleep(0.05) # 20Hz is plenty for toggle detection
