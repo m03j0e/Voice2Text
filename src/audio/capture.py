@@ -1,8 +1,8 @@
-import sounddevice as sd
 import numpy as np
 from src.utils.logger import logger
 
 def get_audio_devices():
+    import sounddevice as sd
     devices = sd.query_devices()
     device_map = {}
     for i, device in enumerate(devices):
@@ -21,6 +21,7 @@ class AudioCapture:
         self.stream = None
 
     def start(self):
+        import sounddevice as sd
         logger.info(f"Starting AudioCapture on device {self.device_id}...")
         self.stream = sd.InputStream(
             samplerate=self.samplerate,

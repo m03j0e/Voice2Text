@@ -82,8 +82,8 @@ The `remove_filler_words` function uses Regular Expressions (`re`) to strip out 
 The Voice2Text application relies on several system-level integrations (macOS accessibility, native frameworks, audio capture). If you encounter issues, review the solutions below.
 
 ### 1. Crashing on Startup (`Trace/BPT trap: 5`)
-*   **Cause**: This usually happens if macOS security or native APIs (like `PyObjC` Speech or Security frameworks) are initialized before the Tkinter main thread is fully running.
-*   **Fix**: Ensure no native macOS UI elements or framework initializations are moved out of the `root.after()` staggered loading sequences in `src/ui/app_window.py`.
+*   **Cause**: This usually happens if macOS security or native APIs (like `PyObjC` Speech, `sounddevice`, `pynput` or Security frameworks) are initialized before the Tkinter main thread is fully running. Importing these libraries at the module level (top-level) will trigger this crash when the module is loaded.
+*   **Fix**: Ensure no native macOS UI elements or framework initializations are moved out of the `root.after()` staggered loading sequences in `src/ui/app_window.py`. Additionally, ensure that imports for `sounddevice`, `pynput`, `Speech`, `Cocoa`, and `AVFoundation` are strictly contained *inside* the functions or classes that use them, not at the top-level of the file.
 
 ### 2. Hotkeys Not Working or Application Freezing
 *   **Cause**: The `pynput` keyboard listener requires specific permissions and thread handling on macOS.
