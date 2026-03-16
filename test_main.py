@@ -8,7 +8,7 @@ os.system("Xvfb :2 -screen 0 1024x768x24 &")
 os.environ["DISPLAY"] = ":2"
 
 print("Starting Voice2Text...")
-proc = subprocess.Popen(["./run.sh"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+proc = subprocess.Popen(["python3", "-m", "src.main"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 start_time = time.time()
 output = []
