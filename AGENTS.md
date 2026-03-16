@@ -13,10 +13,11 @@ The application heavily relies on native macOS APIs (`PyObjC`, `Speech`, `Cocoa`
 
 1.  **Tkinter First:** `tk.Tk()` and its `mainloop()` must be fully initialized *before* importing or calling any macOS native APIs or libraries that trigger security checks (e.g., `SFSpeechRecognizer`, `Security` framework via AI clients/keyring).
 2.  **Staggered Initialization:** The application uses `root.after()` (e.g., `root.after(800, self._initialize_recognizer)`) to defer native setups. Do not move native initialization back into synchronous paths before `mainloop()`.
-3.  **No Native UI in Threads:** Do not attempt to update `Tkinter` widgets or spawn native dialogs (e.g., `NSPanel`) directly from background threads (like the AI processing thread or audio callback). Always use a `queue.Queue()` and `root.after` polling to pass data back to the main thread.
+3.  **Main Thread Imports:** Any native macOS library (like `pynput` or modules from `PyObjC`) that relies on system frameworks MUST be *imported* on the main thread first (e.g., in the `start()` method) before their objects or classes are used in background threads. Importing them for the first time inside a background thread (e.g., `threading.Thread`) will cause a fatal `Trace/BPT trap: 5` error.
+4.  **No Native UI in Threads:** Do not attempt to update `Tkinter` widgets or spawn native dialogs (e.g., `NSPanel`) directly from background threads (like the AI processing thread or audio callback). Always use a `queue.Queue()` and `root.after` polling to pass data back to the main thread.
 
 ## Background Threads and Daemons
-1.  **Pynput Hotkeys:** The `pynput.keyboard.Listener` MUST be started in a separate `daemon=True` thread (`threading.Thread(target=self._run_listener, daemon=True).start()`). Initializing it from the main Tkinter thread loop on macOS will block the UI or cause `BPT traps`.
+1.  **Pynput Hotkeys:** The `pynput.keyboard.Listener` MUST be started in a separate `daemon=True` thread (`threading.Thread(target=self._run_listener, daemon=True).start()`). Initializing the listener loop from the main Tkinter thread on macOS will block the UI. However, the `import pynput` statement MUST happen on the main thread before starting the background thread to prevent `BPT traps`.
 2.  **AI Polishing:** AI calls (e.g., Google Gemini) are synchronous network operations. They must be dispatched to a background thread (`threading.Thread`) to prevent freezing the UI.
 
 ## Testing and CI Constraints
