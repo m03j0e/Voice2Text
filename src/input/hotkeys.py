@@ -13,6 +13,12 @@ class HotkeyListener:
             return
         
         logger.info("Starting Reliable Toggle Hotkey Listener (pynput) in background thread...")
+        try:
+            import pynput
+            from pynput import keyboard
+        except Exception as e:
+            logger.error(f"Failed to import pynput on main thread: {e}")
+            return
         threading.Thread(target=self._run_listener, daemon=True).start()
 
     def _run_listener(self):
