@@ -111,7 +111,7 @@ class AppWindow:
         style.map("TButton", background=[("active", accent_color)], foreground=[("active", bg_color)])
         style.configure("TCheckbutton", background=bg_color, foreground=fg_color)
         style.map("TCheckbutton", background=[("active", bg_color)])
-        style.configure("TCombobox", fieldbackground=bg_color, background=bg_color, foreground=fg_color, selectbackground=select_bg, selectforeground=bg_color)
+        style.configure("TCombobox", fieldbackground=bg_color, background=bg_color, foreground=fg_color, selectbackground="#00008b", selectforeground=bg_color)
         style.configure("TLabel", background=bg_color, foreground=fg_color)
 
         # Device Selection
