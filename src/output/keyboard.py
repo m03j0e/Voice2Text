@@ -1,4 +1,3 @@
-from pynput import keyboard
 from src.output.base import OutputDestination
 from src.utils.logger import logger
 
@@ -31,8 +30,7 @@ class KeyboardInjector(OutputDestination):
     def _get_controller(self):
         if not hasattr(self, 'keyboard_controller'):
             try:
-                from pynput import keyboard
-                self.keyboard_controller = keyboard.Controller()
+                                self.keyboard_controller = keyboard.Controller()
                 logger.debug("Pynput keyboard controller initialized.")
             except Exception as e:
                 logger.warning(f"Failed to initialize pynput controller: {e}")
@@ -67,7 +65,7 @@ class KeyboardInjector(OutputDestination):
                 try:
                     # Clear last_typed_text temporarily so we don't get recursive loops
                     for _ in range(backspaces_needed):
-                        controller.tap(keyboard.Key.backspace)
+                        from pynput import keyboard; controller.tap(keyboard.Key.backspace)
                     success = True
                 except Exception as e:
                     logger.warning(f"Pynput backspace failed: {e}")
