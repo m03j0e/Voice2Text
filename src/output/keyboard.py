@@ -3,15 +3,22 @@ from src.output.base import OutputDestination
 
 class KeyboardInjector(OutputDestination):
     def __init__(self):
-        self.keyboard_controller = keyboard.Controller()
         self.last_typed_text = ""
 
     def reset(self):
         self.last_typed_text = ""
 
+    def _get_controller(self):
+        if not hasattr(self, 'keyboard_controller'):
+            from pynput import keyboard
+            self.keyboard_controller = keyboard.Controller()
+        return self.keyboard_controller
+
     def output(self, text: str, is_final: bool = False):
         if not text:
             return
+
+        controller = self._get_controller()
 
         current_len = len(self.last_typed_text)
         common_len = 0
@@ -21,7 +28,7 @@ class KeyboardInjector(OutputDestination):
         if text.startswith(self.last_typed_text):
              to_type = text[current_len:]
              if to_type:
-                 self.keyboard_controller.type(to_type)
+                 controller.type(to_type)
              self.last_typed_text = text
              return
 
@@ -38,11 +45,11 @@ class KeyboardInjector(OutputDestination):
         backspaces_needed = current_len - common_len
         if backspaces_needed > 0:
              for _ in range(backspaces_needed):
-                 self.keyboard_controller.tap(keyboard.Key.backspace)
+                 controller.tap(keyboard.Key.backspace)
 
         # Type new characters
         to_type = text[common_len:]
         if to_type:
-            self.keyboard_controller.type(to_type)
+            controller.type(to_type)
 
         self.last_typed_text = text

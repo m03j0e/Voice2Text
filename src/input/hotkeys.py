@@ -5,9 +5,13 @@ class HotkeyListener:
         self.callback = callback
         self.listener = None
 
+    from src.utils.logger import logger
+
     def start(self):
+        logger.info("Starting HotkeyListener...")
         self.listener = keyboard.Listener(on_press=self.on_key_press)
         self.listener.start()
+        logger.info("HotkeyListener started.")
 
     def stop(self):
         if self.listener:

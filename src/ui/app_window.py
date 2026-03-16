@@ -35,35 +35,53 @@ class AppWindow:
         self.floating_indicator = None
         
         # Schedule it once the Tkinter mainloop has safely started
-        self.root.after(50, self._initialize_ai)
+        self.root.after(500, self._initialize_ai)
 
         self.audio_capture = None
-        from src.speech.recognizer import Recognizer
-        self.recognizer = Recognizer(result_callback=self.on_recognition_result)
+        self.recognizer = None
+        
+        # Schedule everything else with slightly more delay to avoid race conditions with macOS security/UI frameworks
         self.hotkeys = HotkeyListener(callback=self.toggle_recording)
         self.current_text = ""
-
         self.setup_ui()
-        
-        # Defer hotkey listener startup to prevent macOS Carbon API trace trap on a background thread.
-        self.root.after(1000, self.hotkeys.start)
+
+        self.root.after(800, self._initialize_recognizer)
+        self.root.after(1500, self.hotkeys.start)
 
         # Start checking the queue for GUI updates
         self.root.after(100, self.process_queue)
 
+    def _initialize_recognizer(self):
+        logger.info("Initializing Speech Recognizer...")
+        from src.speech.recognizer import Recognizer
+        try:
+            self.recognizer = Recognizer(result_callback=self.on_recognition_result)
+            logger.info("Speech Recognizer initialized.")
+        except Exception as e:
+            logger.error(f"Failed to initialize Speech Recognizer: {e}")
+
     def _initialize_ai(self):
+        logger.info("Initializing AI components...")
         from src.ai.gemini import GeminiClient
         from src.utils.prompts import PromptManager
         from src.ui.floating_indicator import FloatingIndicator
         
+        logger.debug("Creating GeminiClient...")
         self.ai_client = GeminiClient(defer_init=True)
+        logger.debug("Creating PromptManager...")
         self.prompt_manager = PromptManager()
-        self.floating_indicator = FloatingIndicator(self.root)
+        logger.debug("Creating FloatingIndicator...")
+        try:
+            self.floating_indicator = FloatingIndicator(self.root)
+            logger.debug("FloatingIndicator created.")
+        except Exception as e:
+            logger.error(f"Failed to create FloatingIndicator: {e}")
         
         # Update combo box now that prompt manager is loaded
         if hasattr(self, 'prompt_combo'):
             self.prompt_combo['values'] = self.prompt_manager.prompts
             self.prompt_combo.set(self.prompt_manager.default_prompt)
+        logger.info("AI components initialized.")
 
     def setup_ui(self):
         # Configure Hacker Outrun style

@@ -16,7 +16,14 @@ class FloatingIndicator:
         # Setup pure native macOS NSPanel for the indicator
         # This guarantees it NEVER steals focus (NSWindowStyleMaskNonactivatingPanel)
         width, height = 180, 70
-        screen_rect = Cocoa.NSScreen.mainScreen().frame()
+        # Position 50px from bottom right
+        main_screen = Cocoa.NSScreen.mainScreen()
+        if not main_screen:
+            logger.error("Could not find main screen for FloatingIndicator!")
+            self.panel = None
+            return
+
+        screen_rect = main_screen.frame()
         
         # Position 50px from bottom right
         x = screen_rect.size.width - width - 50
@@ -25,9 +32,11 @@ class FloatingIndicator:
         rect = Cocoa.NSMakeRect(x, y, width, height)
         style = Cocoa.NSWindowStyleMaskNonactivatingPanel | Cocoa.NSWindowStyleMaskBorderless
         
+        logger.debug("Creating NSPanel...")
         self.panel = Cocoa.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             rect, style, Cocoa.NSBackingStoreBuffered, False
         )
+        logger.debug("NSPanel created.")
         self.panel.setLevel_(Cocoa.NSStatusWindowLevel) # Always on top
         self.panel.setOpaque_(False)
         self.panel.setBackgroundColor_(Cocoa.NSColor.clearColor())
@@ -67,7 +76,7 @@ class FloatingIndicator:
         self.panel.contentView().addSubview_(self.container)
 
     def show(self):
-        if self.is_visible:
+        if self.is_visible or not self.panel:
             return
             
         # Bring the panel to screen without stealing focus
@@ -75,7 +84,7 @@ class FloatingIndicator:
         self.is_visible = True
 
     def hide(self):
-        if not self.is_visible:
+        if not self.is_visible or not self.panel:
             return
             
         self.panel.orderOut_(None)
