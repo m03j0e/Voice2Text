@@ -1,0 +1,32 @@
+# Voice2Text AI Agent Guidelines
+
+Welcome, Agent. You are working on the Voice2Text macOS application. This document contains crucial environmental constraints, architectural rules, and troubleshooting context derived from the codebase and development history.
+
+**Read and adhere to these guidelines before making changes or attempting to fix bugs.**
+
+## Core Directive: Continuous Troubleshooting Improvement
+*   **Mandatory Update Rule**: Whenever you (the AI agent) troubleshoot and successfully resolve a new issue, bug, or environmental constraint within this project, you **MUST** update this `AGENTS.md` file (and the Troubleshooting section in `README.md` if applicable) to document the solution.
+*   **Goal**: Ensure future AI workflows and human developers do not have to rediscover the same solutions.
+
+## Architecture and UI Initialization Constraints (macOS)
+The application heavily relies on native macOS APIs (`PyObjC`, `Speech`, `Cocoa`, `Security`) alongside `Tkinter`. Initializing these in the wrong order will cause fatal crashes (e.g., `Trace/BPT trap: 5`).
+
+1.  **Tkinter First:** `tk.Tk()` and its `mainloop()` must be fully initialized *before* importing or calling any macOS native APIs or libraries that trigger security checks (e.g., `SFSpeechRecognizer`, `Security` framework via AI clients/keyring).
+2.  **Staggered Initialization:** The application uses `root.after()` (e.g., `root.after(800, self._initialize_recognizer)`) to defer native setups. Do not move native initialization back into synchronous paths before `mainloop()`.
+3.  **No Native UI in Threads:** Do not attempt to update `Tkinter` widgets or spawn native dialogs (e.g., `NSPanel`) directly from background threads (like the AI processing thread or audio callback). Always use a `queue.Queue()` and `root.after` polling to pass data back to the main thread.
+
+## Background Threads and Daemons
+1.  **Pynput Hotkeys:** The `pynput.keyboard.Listener` MUST be started in a separate `daemon=True` thread (`threading.Thread(target=self._run_listener, daemon=True).start()`). Initializing it from the main Tkinter thread loop on macOS will block the UI or cause `BPT traps`.
+2.  **AI Polishing:** AI calls (e.g., Google Gemini) are synchronous network operations. They must be dispatched to a background thread (`threading.Thread`) to prevent freezing the UI.
+
+## Testing and CI Constraints
+1.  **Linux Headless Testing:** The project utilizes macOS-specific frameworks (`pyobjc-framework-Speech`, `Cocoa`, `afplay`) which *cannot* be installed or executed on Linux environments. Testing these macOS-native modules on Linux CI/test environments will fail without proper mocking.
+2.  **X11 Display Requirement:** When verifying `pynput` or other X11-dependent UI libraries on headless Linux environments, you must start a virtual framebuffer: `Xvfb :0 -screen 0 1024x768x24 &` and set `DISPLAY=:0` to prevent `DisplayNameError`.
+3.  **PortAudio Requirement:** `sounddevice` depends on system-level PortAudio. When setting up or testing the environment on Linux/Ubuntu, execute `sudo apt-get install -y portaudio19-dev` *prior* to installing Python dependencies.
+
+## Known Errors and Expected Behaviors
+1.  **kAFAssistantErrorDomain 1110:** In `speech/recognizer.py`, this error code is safe to ignore (`pass`). It usually occurs when the audio stream ends or is momentarily interrupted.
+2.  **AppleScript Fallback:** In `output/keyboard.py`, `pynput` is the primary injection method, but AppleScript (`osascript`) is used as a fallback if `pynput` fails due to permissions or environment issues.
+
+## State Feedback
+*   The application uses the native macOS `afplay` command (e.g., `afplay /System/Library/Sounds/Ping.aiff`) for audio feedback on state changes. Do not replace this with cross-platform libraries unless explicitly requested.

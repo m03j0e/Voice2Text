@@ -76,3 +76,37 @@ We instantiate Apple's `SFSpeechRecognizer`. The raw audio from `sounddevice` (c
 
 ### 4. Text Processing
 The `remove_filler_words` function uses Regular Expressions (`re`) to strip out hesitation markers like "um", "uh", "so", and "like" before the text is displayed or typed.
+
+## Troubleshooting & Common Issues
+
+The Voice2Text application relies on several system-level integrations (macOS accessibility, native frameworks, audio capture). If you encounter issues, review the solutions below.
+
+### 1. Crashing on Startup (`Trace/BPT trap: 5`)
+*   **Cause**: This usually happens if macOS security or native APIs (like `PyObjC` Speech or Security frameworks) are initialized before the Tkinter main thread is fully running.
+*   **Fix**: Ensure no native macOS UI elements or framework initializations are moved out of the `root.after()` staggered loading sequences in `src/ui/app_window.py`.
+
+### 2. Hotkeys Not Working or Application Freezing
+*   **Cause**: The `pynput` keyboard listener requires specific permissions and thread handling on macOS.
+*   **Fix**:
+    1. Ensure your Terminal (or the IDE/App running the script) has **Accessibility** permissions in macOS `System Settings -> Privacy & Security -> Accessibility`.
+    2. The listener must run in a background daemon thread (as currently implemented). Moving it to the main Tkinter thread will block the UI or crash the app.
+
+### 3. Text Injection Failing (AppleScript Fallback Error)
+*   **Cause**: If `pynput` fails to inject text, the app attempts to use `osascript` (AppleScript) as a fallback. If both fail, it's a permissions issue.
+*   **Fix**: Similar to hotkeys, ensure the app has **Accessibility** permissions. Check the console logs for "AppleScript injection failed" to confirm if the fallback is being triggered.
+
+### 4. Linux Development & CI Errors
+*   **Cause**: This is a macOS-first application. Running tests or the app on Linux will encounter missing libraries.
+*   **Fix**:
+    1. **PortAudio**: You must install the system library before `pip install`. Run: `sudo apt-get install -y portaudio19-dev`.
+    2. **Headless X11**: When running tests involving `pynput` on Linux CI, you must start a virtual display: `Xvfb :0 -screen 0 1024x768x24 &` and `export DISPLAY=:0`.
+    3. **macOS Frameworks**: Modules like `pyobjc-framework-Speech` and native commands like `afplay` will not work on Linux and must be mocked during testing.
+
+### 5. AI Polishing Freezes the UI
+*   **Cause**: Network calls to Google Gemini blocking the main thread.
+*   **Fix**: Ensure AI processing remains dispatched to a background `threading.Thread` (e.g., `polish_and_dispatch`). Do not attempt to update Tkinter UI directly from this thread; use the `queue.Queue()`.
+
+---
+
+**⚠️ Developer / AI Agent Notice**
+When troubleshooting or resolving new issues, environmental constraints, or bugs, you **must** ensure the `AGENTS.md` file is updated. This continuous documentation is required to support improved troubleshooting for future AI workflows and human developers.
