@@ -61,6 +61,7 @@ class AppWindow:
                     text="Status: Grant Accessibility permission, then restart",
                     foreground="#e74c3c"
                 )
+                self._prompt_accessibility_permission()
         except Exception:
             pass
         try:
@@ -71,6 +72,33 @@ class AppWindow:
                 text="Status: Hotkeys Disabled (Check Accessibility in System Settings)",
                 foreground="#e74c3c"
             )
+
+    def _prompt_accessibility_permission(self):
+        import subprocess, sys, os
+        try:
+            real_path = os.path.realpath(sys.executable)
+        except Exception:
+            real_path = sys.executable
+
+        msg = (
+            "Voice2Text needs Accessibility permission for global hotkeys.\n\n"
+            "Add this exact file to Accessibility:\n\n"
+            f"{real_path}\n\n"
+            "Steps:\n"
+            "1. Click OK — System Settings > Accessibility will open\n"
+            "2. Click the '+' button\n"
+            "3. Press \u2318\u21e7G (Cmd+Shift+G) in the file picker\n"
+            f"4. Paste the path above and press Enter, then click Open\n"
+            "5. Make sure the toggle next to it is ON\n"
+            "6. Quit and restart Voice2Text"
+        )
+        messagebox.showinfo("Accessibility Permission Required", msg)
+
+        # Open System Settings → Accessibility
+        subprocess.run([
+            "open",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        ], check=False)
 
     def _initialize_recognizer(self):
         logger.info("Initializing Speech Recognizer...")

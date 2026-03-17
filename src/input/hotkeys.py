@@ -13,19 +13,14 @@ class HotkeyListener:
         self.last_trigger_time = 0.0
 
     def start(self):
-        # Check Accessibility permission and prompt if missing.
-        # kCGEventTapOptionDefault requires Accessibility to intercept global events.
+        # Check Accessibility permission — kCGEventTapOptionDefault requires it.
         try:
             import HIServices
             if not HIServices.AXIsProcessTrusted():
                 logger.warning(
                     "Accessibility permission not granted. "
-                    "Requesting permission — please allow in System Settings > "
-                    "Privacy & Security > Accessibility, then restart the app."
-                )
-                # Show the macOS permission dialog pointing to Accessibility prefs.
-                HIServices.AXIsProcessTrustedWithOptions_(
-                    {"AXTrustedCheckOptionPrompt": True}
+                    "Grant it in System Settings > Privacy & Security > Accessibility, "
+                    "then restart the app."
                 )
         except Exception as e:
             logger.warning(f"Could not check Accessibility permission: {e}")
@@ -88,6 +83,20 @@ class HotkeyListener:
             _callback,
             None,
         )
+
+        if tap is None:
+            logger.warning(
+                "CGEventTap (active) creation failed — trying passive tap (Input Monitoring)..."
+            )
+            from Quartz import kCGEventTapOptionListenOnly
+            tap = CGEventTapCreate(
+                kCGSessionEventTap,
+                kCGHeadInsertEventTap,
+                kCGEventTapOptionListenOnly,
+                mask,
+                _callback,
+                None,
+            )
 
         if tap is None:
             logger.warning(
