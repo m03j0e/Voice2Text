@@ -3,10 +3,6 @@ import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox
 import queue
 import threading
-try:
-    import numpy as np
-except ImportError:
-    np = None
 from src.utils.logger import logger
 from src.input.hotkeys import HotkeyListener
 from src.utils.text_processing import remove_filler_words
@@ -59,10 +55,22 @@ class AppWindow:
 
     def _safe_start_hotkeys(self):
         try:
+            import HIServices
+            if not HIServices.AXIsProcessTrusted():
+                self.status_label.config(
+                    text="Status: Grant Accessibility permission, then restart",
+                    foreground="#e74c3c"
+                )
+        except Exception:
+            pass
+        try:
             self.hotkeys.start()
         except Exception as e:
             logger.error(f"Failed to start hotkeys: {e}")
-            self.status_label.config(text="Status: Hotkeys Disabled (Check Permissions)", foreground="#e74c3c")
+            self.status_label.config(
+                text="Status: Hotkeys Disabled (Check Accessibility in System Settings)",
+                foreground="#e74c3c"
+            )
 
     def _initialize_recognizer(self):
         logger.info("Initializing Speech Recognizer...")
@@ -214,6 +222,9 @@ class AppWindow:
     def prompt_api_key(self):
         key = simpledialog.askstring("API Key", "Enter Google Gemini API Key:", show='*')
         if key:
+            if not self.ai_client:
+                messagebox.showwarning("Not Ready", "AI components are still initializing. Please wait a moment.")
+                return
             success = self.ai_client.set_api_key(key)
             if success:
                 messagebox.showinfo("Success", "API Key saved securely.")
@@ -222,7 +233,7 @@ class AppWindow:
 
     def on_ai_toggle(self):
         if self.ai_var.get():
-            if not self.ai_client.has_key:
+            if not self.ai_client or not self.ai_client.has_key:
                 success = self.ai_client.initialize()
                 if not success:
                     messagebox.showwarning("API Key Required", "Please set your Gemini API Key first.")
@@ -256,7 +267,8 @@ class AppWindow:
         for output in self.outputs:
             output.reset()
 
-        self.floating_indicator.show()
+        if self.floating_indicator:
+            self.floating_indicator.show()
 
         # Audio feedback: start recording
         import sys
@@ -279,7 +291,8 @@ class AppWindow:
             logger.error(f"Error starting recognition: {e}", exc_info=True)
             self.is_recording = False
             self.queue.put(("status", f"Error: {e}", "#e74c3c"))
-            self.floating_indicator.hide()
+            if self.floating_indicator:
+                self.floating_indicator.hide()
 
     def stop_recording(self):
         if not self.is_recording:
@@ -300,7 +313,8 @@ class AppWindow:
             os.system("afplay /System/Library/Sounds/Pop.aiff &")
         self.btn_toggle.config(text="Start Recording")
 
-        self.floating_indicator.hide()
+        if self.floating_indicator:
+            self.floating_indicator.hide()
 
         if self.ai_var.get():
             self.queue.put(("status", "Status: Polishing with AI...", "#3498db"))

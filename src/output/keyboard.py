@@ -85,7 +85,7 @@ class KeyboardInjector(OutputDestination):
                     logger.warning(f"Pynput typing failed: {e}")
             
             if not success:
-               self._type_fallback(to_type)
+                self._type_fallback(to_type)
 
         self.last_typed_text = text
         
