@@ -328,12 +328,15 @@ class AppWindow:
 
         logger.debug("Stopping recording...")
 
+        # Capture the final text BEFORE stopping (prevents race with late callbacks)
+        final_text = self.current_text
+        self.is_recording = False
+
         if self.audio_capture:
             self.audio_capture.stop()
             self.audio_capture = None
 
         self.recognizer.stop()
-        self.is_recording = False
 
         # Audio feedback: stop recording
         import sys
@@ -354,10 +357,10 @@ class AppWindow:
             self.prompt_combo['values'] = self.prompt_manager.prompts
 
             # Dispatch to background thread for API call
-            threading.Thread(target=self.polish_and_dispatch, args=(self.current_text, current_prompt)).start()
+            threading.Thread(target=self.polish_and_dispatch, args=(final_text, current_prompt)).start()
         else:
-            # Standard real-time flow
-            self.queue.put(("final", self.current_text))
+            # Queue final dispatch with the captured text
+            self.queue.put(("final_stop", final_text))
             self.queue.put(("status", "Status: Ready (Press Right Option to Record)", "#27ae60"))
 
     def polish_and_dispatch(self, raw_text, prompt):
@@ -384,6 +387,11 @@ class AppWindow:
         self.recognizer.process_audio(numpy_data)
 
     def on_recognition_result(self, transcription, is_final):
+        # Discard late callbacks that arrive after recording has stopped
+        if not self.is_recording:
+            logger.debug(f"Discarding post-stop transcription: {transcription}")
+            return
+
         logger.debug(f"Transcription received: {transcription}")
         cleaned_text = remove_filler_words(transcription)
         self.current_text = cleaned_text
@@ -397,6 +405,9 @@ class AppWindow:
                 if msg_type == "status":
                     self.status_label.config(text=msg[1], foreground=msg[2])
                 elif msg_type == "text":
+                    # Discard stale text messages that arrived after recording stopped
+                    if not self.is_recording:
+                        continue
                     new_text = msg[1]
                     is_final = msg[2]
                     self.text_area.delete("1.0", tk.END)
@@ -405,10 +416,12 @@ class AppWindow:
                     # Only inject if AI is OFF
                     if not self.ai_var.get():
                         self.dispatch_outputs(new_text, is_final)
-                elif msg_type == "final":
+                elif msg_type == "final_stop":
+                    # Authoritative final dispatch from stop_recording()
                     final_text = msg[1]
-                    if not self.ai_var.get():
-                        self.dispatch_outputs(final_text, True)
+                    self.text_area.delete("1.0", tk.END)
+                    self.text_area.insert(tk.END, final_text)
+                    self.dispatch_outputs(final_text, True)
                 elif msg_type == "final_ai":
                     polished_text = msg[1]
                     # Update text area with polished text

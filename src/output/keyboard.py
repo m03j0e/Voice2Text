@@ -37,10 +37,16 @@ class KeyboardInjector(OutputDestination):
         return self.keyboard_controller
 
     def output(self, text: str, is_final: bool = False):
-        if not text:
+        if not text or not text.strip():
+            logger.debug("KeyboardInjector: empty text, skipping.")
             return
         
         logger.debug(f"KeyboardInjector processing: '{text}' (final={is_final})")
+
+        # If text is identical to what we already typed, skip (prevents duplicate dispatch)
+        if text == self.last_typed_text:
+            logger.debug("KeyboardInjector: text identical to last typed, skipping.")
+            return
         
         current_len = len(self.last_typed_text)
         common_len = 0
@@ -88,6 +94,6 @@ class KeyboardInjector(OutputDestination):
                 self._type_fallback(to_type)
 
         self.last_typed_text = text
-        
-        if is_final:
-            self.last_typed_text = ""
+        # Do NOT reset last_typed_text on is_final — reset() handles that
+        # at the start of the next recording session. This prevents late
+        # duplicate dispatches from retyping the entire text.

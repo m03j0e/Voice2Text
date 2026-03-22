@@ -30,7 +30,17 @@ The application heavily relies on native macOS APIs (`PyObjC`, `Speech`, `Cocoa`
 
 ## Known Errors and Expected Behaviors
 1.  **kAFAssistantErrorDomain 1110:** In `speech/recognizer.py`, this error code is safe to ignore (`pass`). It usually occurs when the audio stream ends or is momentarily interrupted.
-2.  **AppleScript Fallback:** In `output/keyboard.py`, `pynput` is the primary injection method, but AppleScript (`osascript`) is used as a fallback if `pynput` fails due to permissions or environment issues.
+2.  **kLSRErrorDomain 301 ("Recognition request was canceled"):** In `speech/recognizer.py`, this error fires after `endAudio()` on every normal recording stop. It is expected and silently ignored. Treating it as a real error will cause confusing log noise.
+3.  **AppleScript Fallback:** In `output/keyboard.py`, `pynput` is the primary injection method, but AppleScript (`osascript`) is used as a fallback if `pynput` fails due to permissions or environment issues.
+
+## Post-Stop Race Conditions (Resolved)
+After `stop_recording()`, Apple's `SFSpeechRecognizer` continues to fire result callbacks with stale or empty transcription text. These late arrivals can corrupt the injected text. The fix is a **three-layer guard**:
+
+1.  **Recognizer (`_stopped` flag):** `Recognizer.stop()` sets `self._stopped = True`. The `recognition_result_handler` checks this flag and silently discards any callbacks that arrive after stop. `start()` resets it to `False`.
+2.  **AppWindow (`is_recording` guard):** `on_recognition_result()` returns immediately if `self.is_recording` is `False`. Additionally, `process_queue()` discards `"text"` queue messages when not recording.
+3.  **KeyboardInjector (no is_final reset):** `output()` does **not** reset `last_typed_text` on `is_final=True`. The reset only happens in `reset()` at the start of the next recording. This prevents duplicate dispatches from retyping text. Empty and identical-text dispatches are also short-circuited.
+
+**Never remove any of these guards** — they work together to prevent the race condition.
 
 ## State Feedback
 *   The application uses the native macOS `afplay` command (e.g., `afplay /System/Library/Sounds/Ping.aiff`) for audio feedback on state changes. Do not replace this with cross-platform libraries unless explicitly requested.

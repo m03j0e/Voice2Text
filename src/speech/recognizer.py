@@ -30,6 +30,7 @@ class Recognizer:
             self.request = None
             self.recognition_task = None
             self.audio_format = None
+            self._stopped = False
             return
 
         self.recognizer = self.SFSpeechRecognizer.new()
@@ -37,6 +38,7 @@ class Recognizer:
         self.result_callback = result_callback
         self.request = None
         self.recognition_task = None
+        self._stopped = False
 
         self.audio_format = self.AVAudioFormat.alloc().initStandardFormatWithSampleRate_channels_(
             self.samplerate, 1
@@ -46,6 +48,7 @@ class Recognizer:
         if not hasattr(self, 'has_speech') or not self.has_speech:
             return
         logger.info("Initializing SFSpeechRecognizer...")
+        self._stopped = False
         self.request = self.SFSpeechAudioBufferRecognitionRequest.new()
         
         # Enable Apple's on-device ML/Apple Intelligence punctuation
@@ -60,6 +63,7 @@ class Recognizer:
         logger.info("Recognition task started.")
 
     def stop(self):
+        self._stopped = True
         if self.request:
             self.request.endAudio()
             self.request = None
@@ -86,9 +90,17 @@ class Recognizer:
         self.request.appendAudioPCMBuffer_(buffer)
 
     def recognition_result_handler(self, result, error):
+        # Discard any callbacks that arrive after stop() was called
+        if self._stopped:
+            logger.debug("Ignoring post-stop recognition callback.")
+            return
+
         if error:
             if error.domain() == "kAFAssistantErrorDomain" and error.code() == 1110:
                 pass
+            elif error.domain() == "kLSRErrorDomain" and error.code() == 301:
+                # Expected after endAudio() — "Recognition request was canceled"
+                logger.debug("Recognition canceled (expected after stop).")
             else:
                 logger.error(f"Recognition error: {error}")
 
