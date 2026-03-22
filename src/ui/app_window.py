@@ -28,6 +28,7 @@ class AppWindow:
 
         self.audio_capture = None
         self.recognizer = None
+        self._accessibility_granted = True  # Checked after mainloop starts
 
         self.hotkeys = HotkeyListener(callback=lambda: self.root.after(0, self.toggle_recording))
         self.current_text = ""
@@ -41,11 +42,13 @@ class AppWindow:
         try:
             import HIServices
             if not HIServices.AXIsProcessTrusted():
+                self._accessibility_granted = False
+                logger.warning("Accessibility not granted — text injection will be disabled.")
                 self.status_label.config(
-                    text="Status: Grant Accessibility permission, then restart",
-                    foreground="#e74c3c"
+                    text="Text injection disabled — Accessibility not granted",
+                    foreground="#B87352"
                 )
-                self._prompt_accessibility_permission()
+                self.btn_access.pack(side="left", padx=5)
         except Exception:
             pass
         try:
@@ -53,8 +56,8 @@ class AppWindow:
         except Exception as e:
             logger.error(f"Failed to start hotkeys: {e}")
             self.status_label.config(
-                text="Status: Hotkeys Disabled (Check Accessibility in System Settings)",
-                foreground="#e74c3c"
+                text="Hotkeys Disabled — Check Accessibility in System Settings",
+                foreground="#B87352"
             )
 
     def _prompt_accessibility_permission(self):
@@ -65,14 +68,14 @@ class AppWindow:
             real_path = sys.executable
 
         msg = (
-            "Voice2Text needs Accessibility permission for global hotkeys.\n\n"
-            "Add this exact file to Accessibility:\n\n"
+            "Voice2Text needs Accessibility permission to inject text into other apps.\n\n"
+            "Add this exact file to System Settings > Privacy & Security > Accessibility:\n\n"
             f"{real_path}\n\n"
             "Steps:\n"
             "1. Click OK — System Settings > Accessibility will open\n"
             "2. Click the '+' button\n"
             "3. Press \u2318\u21e7G (Cmd+Shift+G) in the file picker\n"
-            f"4. Paste the path above and press Enter, then click Open\n"
+            "4. Paste the path above, press Enter, then click Open\n"
             "5. Make sure the toggle next to it is ON\n"
             "6. Quit and restart Voice2Text"
         )
@@ -81,6 +84,11 @@ class AppWindow:
             "open",
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         ], check=False)
+
+    def _ready_status(self):
+        if self._accessibility_granted:
+            return ("Status: Ready (Press Right Option)", "#A9ACA0")
+        return ("Text injection disabled — click 'Setup Access' to fix", "#B87352")
 
     def _initialize_recognizer(self):
         logger.info("Initializing Speech Recognizer...")
@@ -96,25 +104,27 @@ class AppWindow:
         if 'clam' in style.theme_names():
             style.theme_use('clam')
 
-        bg_color = "#f4f6f8"
-        fg_color = "#333333"
-        accent_color = "#27ae60"
-        accent_hover = "#2ecc71"
-        select_bg = "#d5f5e3"
-        select_fg = "#1e8449"
+        bg_color    = "#3A4B40"   # Midnight Sage
+        fg_color    = "#E2DED0"   # Champagne Dust
+        accent_color = "#B87352"  # Raw Terracotta
+        accent_hover = "#c98462"  # Raw Terracotta lighter
+        select_bg   = "#1B201D"   # Inky Obsidian
+        select_fg   = "#E2DED0"   # Champagne Dust
+        field_bg    = "#1B201D"   # Inky Obsidian
+        muted_fg    = "#A9ACA0"   # Pebble Grey
 
         self.root.configure(bg=bg_color)
         style.configure(".", background=bg_color, foreground=fg_color,
-                        fieldbackground="#ffffff", troughcolor=bg_color,
+                        fieldbackground=field_bg, troughcolor=select_bg,
                         selectbackground=select_bg, selectforeground=select_fg,
                         font=("Helvetica", 12))
-        style.configure("TLabelframe", background=bg_color, foreground=fg_color, bordercolor="#cccccc")
+        style.configure("TLabelframe", background=bg_color, foreground=fg_color, bordercolor=muted_fg)
         style.configure("TLabelframe.Label", background=bg_color, foreground=accent_color, font=("Helvetica", 12, "bold"))
-        style.configure("TButton", background=accent_color, foreground="#ffffff", font=("Helvetica", 12, "bold"), borderwidth=0)
-        style.map("TButton", background=[("active", accent_hover)], foreground=[("active", "#ffffff")])
+        style.configure("TButton", background=accent_color, foreground=fg_color, font=("Helvetica", 12, "bold"), borderwidth=0)
+        style.map("TButton", background=[("active", accent_hover)], foreground=[("active", fg_color)])
         style.configure("TCheckbutton", background=bg_color, foreground=fg_color)
         style.map("TCheckbutton", background=[("active", bg_color)])
-        style.configure("TCombobox", fieldbackground="#ffffff", background="#ffffff", foreground=fg_color,
+        style.configure("TCombobox", fieldbackground=field_bg, background=field_bg, foreground=fg_color,
                         selectbackground=select_bg, selectforeground=select_fg)
         style.configure("TLabel", background=bg_color, foreground=fg_color)
 
@@ -150,15 +160,18 @@ class AppWindow:
         ctrl_frame.pack(fill="x", padx=10, pady=5)
         self.btn_toggle = ttk.Button(ctrl_frame, text="Start Recording", command=self.toggle_recording)
         self.btn_toggle.pack(side="left", padx=5)
-        self.status_label = ttk.Label(ctrl_frame, text="Status: Ready (Press Right Option)", foreground="#27ae60")
+        # Setup Access button — shown only when Accessibility is not granted
+        self.btn_access = ttk.Button(ctrl_frame, text="Setup Access...", command=self._prompt_accessibility_permission)
+        # (not packed here — _safe_start_hotkeys shows it if needed)
+        self.status_label = ttk.Label(ctrl_frame, text="Status: Ready (Press Right Option)", foreground="#A9ACA0")
         self.status_label.pack(side="left", padx=5)
 
         # Transcription area
         frame_text = ttk.LabelFrame(self.root, text="Transcription", padding=10)
         frame_text.pack(fill="both", expand=True, padx=10, pady=5)
-        self.text_area = tk.Text(frame_text, height=8, wrap="word", bg="#ffffff", fg="#333333",
-                                 insertbackground="#27ae60", selectbackground="#d5f5e3",
-                                 selectforeground="#1e8449", font=("Helvetica", 12))
+        self.text_area = tk.Text(frame_text, height=8, wrap="word", bg="#1B201D", fg="#E2DED0",
+                                 insertbackground="#B87352", selectbackground="#3A4B40",
+                                 selectforeground="#E2DED0", font=("Helvetica", 12))
         self.text_area.pack(fill="both", expand=True)
 
     def toggle_recording(self):
@@ -172,7 +185,7 @@ class AppWindow:
             return
 
         if not self.recognizer:
-            self.queue.put(("status", "Status: Initializing, please wait...", "#e74c3c"))
+            self.queue.put(("status", "Status: Initializing, please wait...", "#A9ACA0"))
             return
 
         logger.info("Starting recording session...")
@@ -183,7 +196,7 @@ class AppWindow:
             output.reset()
 
         self.btn_toggle.config(text="Stop Recording")
-        self.queue.put(("status", "Status: Recording...", "#e74c3c"))
+        self.queue.put(("status", "Status: Recording...", "#B87352"))
 
         if sys.platform == 'darwin':
             os.system("afplay /System/Library/Sounds/Ping.aiff &")
@@ -199,7 +212,7 @@ class AppWindow:
             logger.error(f"Error starting recognition: {e}", exc_info=True)
             self.is_recording = False
             self.btn_toggle.config(text="Start Recording")
-            self.queue.put(("status", f"Error: {e}", "#e74c3c"))
+            self.queue.put(("status", f"Error: {e}", "#B87352"))
 
     def stop_recording(self):
         if not self.is_recording:
@@ -220,7 +233,8 @@ class AppWindow:
             os.system("afplay /System/Library/Sounds/Pop.aiff &")
 
         self.queue.put(("final_stop", final_text))
-        self.queue.put(("status", "Status: Ready (Press Right Option to Record)", "#27ae60"))
+        status_text, status_color = self._ready_status()
+        self.queue.put(("status", status_text, status_color))
 
     def on_audio_data(self, numpy_data, status):
         if status:
