@@ -25,6 +25,10 @@ The application heavily relies on native macOS APIs (`PyObjC`, `Speech`, `Cocoa`
     - `self.tap` is assigned **before** `CGEventTapEnable` is called so the re-enable path in the callback always has a valid reference.
     - If the run loop exits with any result other than `kCFRunLoopRunTimedOut` (normal heartbeat) or `kCFRunLoopRunStopped` (intentional stop via `stop()`), the thread restarts itself after a 3-second delay as long as `_should_run` is `True`.
     - `stop()` sets `_should_run = False` before calling `CFRunLoopStop` so the restart logic knows not to restart.
+    - **CRITICAL — tap location / option fallback order**: `kCGSessionEventTap + kCGEventTapOptionListenOnly` is **intentionally skipped**. Without Input Monitoring permission, macOS lets that creation return non-None but silently restricts event delivery to the focused process only (in-focus-only bug). The correct order is:
+      1. `kCGHIDEventTap` active (Accessibility) → truly global
+      2. `kCGSessionEventTap` active (Accessibility) → truly global
+      3. `kCGHIDEventTap` listen-only (Input Monitoring) → returns `None` if denied (safe fail)
 2.  **AI Polishing:** AI calls (e.g., Google Gemini) are synchronous network operations. They must be dispatched to a background thread (`threading.Thread`) to prevent freezing the UI.
 
 ## Testing and CI Constraints

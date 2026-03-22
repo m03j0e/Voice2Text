@@ -86,12 +86,13 @@ The Voice2Text application relies on several system-level integrations (macOS ac
 *   **Cause**: This usually happens if macOS security or native APIs (like `PyObjC` Speech, `sounddevice`, `pynput` or Security frameworks) are initialized before the Tkinter main thread is fully running. Importing these libraries at the module level (top-level) will trigger this crash when the module is loaded.
 *   **Fix**: Ensure no native macOS UI elements or framework initializations are moved out of the `root.after()` staggered loading sequences in `src/ui/app_window.py`. Additionally, ensure that imports for `sounddevice`, `pynput`, `Speech`, `Cocoa`, and `AVFoundation` are strictly contained *inside* the functions or classes that use them, not at the top-level of the file.
 
-### 2. Hotkeys Not Working or Application Freezing
-*   **Cause**: The `CGEventTap` hotkey listener requires **Accessibility** permission. macOS may also automatically disable the tap after sleep/wake cycles or other system events.
+### 2. Hotkeys Not Working or Only Working When App is in Focus
+*   **Cause**: The `CGEventTap` listener requires the correct permission to receive global events. A common trap: `kCGSessionEventTap + listen-only` appears to succeed (macOS returns a non-None tap port) without Input Monitoring permission, but macOS silently restricts delivery to events targeting the focused process. The app avoids this by using `kCGHIDEventTap` (lowest level, fails fast with `None` when permission is denied) for the listen-only fallback.
 *   **Fix**:
-    1. Ensure your Terminal (or the Python executable in `venv/bin/python`) has **Accessibility** permissions in macOS `System Settings -> Privacy & Security -> Accessibility`.
-    2. The app auto-detects tap-disable events and re-enables the tap immediately. If it misses one, it will also auto-restart the listener thread within 3 seconds.
-    3. If hotkeys stop responding after a long sleep, wait a few seconds — the listener will restart itself. If it does not, quit and relaunch the app and confirm Accessibility is still granted.
+    1. Grant **Accessibility** to the exact binary shown in the startup dialog (`venv/bin/python` resolved to its real path) in `System Settings -> Privacy & Security -> Accessibility`. This is the preferred path — it enables an active tap that works globally.
+    2. If Accessibility cannot be granted, grant **Input Monitoring** instead (`System Settings -> Privacy & Security -> Input Monitoring`). The app will fall back to a HID-level listen-only tap which is also global.
+    3. After granting either permission, **restart the app** — permissions are checked at tap creation time.
+    4. The app auto-detects tap-disable events (sleep/wake) and re-enables immediately; if the run loop exits unexpectedly it restarts within 3 seconds.
 
 ### 3. Text Injection Failing (AppleScript Fallback Error)
 *   **Cause**: If `pynput` fails to inject text, the app attempts to use `osascript` (AppleScript) as a fallback. If both fail, it's a permissions issue.

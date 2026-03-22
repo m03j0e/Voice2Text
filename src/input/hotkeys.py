@@ -51,9 +51,11 @@ class HotkeyListener:
                 CFRunLoopAddSource,
                 CFRunLoopGetCurrent,
                 CFRunLoopRunInMode,
+                kCGHIDEventTap,
                 kCGSessionEventTap,
                 kCGHeadInsertEventTap,
                 kCGEventTapOptionDefault,
+                kCGEventTapOptionListenOnly,
                 kCGEventFlagsChanged,
                 CGEventGetIntegerValueField,
                 CGEventGetFlags,
@@ -99,36 +101,79 @@ class HotkeyListener:
         self._callback_fn = _callback
 
         mask = 1 << kCGEventFlagsChanged  # CGEventMaskBit(kCGEventFlagsChanged)
+
+        # --- Tap creation strategy ---
+        # We try taps in order from most global to least, stopping at the first success.
+        #
+        # IMPORTANT: kCGSessionEventTap + kCGEventTapOptionListenOnly is intentionally
+        # skipped as a fallback.  Without Input Monitoring permission macOS lets that
+        # creation succeed (returns non-None) but silently restricts delivery to events
+        # targeting the focused process — i.e. it only fires when Voice2Text is in focus.
+        # kCGHIDEventTap listen-only returns None when Input Monitoring is denied, which
+        # is a proper failure we can detect and report.
+        #
+        # Priority:
+        #   1. kCGHIDEventTap   active      (needs Accessibility)   — global, below session
+        #   2. kCGSessionEventTap active    (needs Accessibility)   — global, session level
+        #   3. kCGHIDEventTap   listen-only (needs Input Monitoring) — global, read-only
+
+        tap = None
+        tap_description = None
+
+        # 1. HID-level active tap
         tap = CGEventTapCreate(
-            kCGSessionEventTap,
+            kCGHIDEventTap,
             kCGHeadInsertEventTap,
-            kCGEventTapOptionDefault,   # Active tap — requires Accessibility, works globally
+            kCGEventTapOptionDefault,
             mask,
             _callback,
             None,
         )
+        if tap is not None:
+            tap_description = "active tap at HID level (Accessibility granted)"
 
+        # 2. Session-level active tap
         if tap is None:
-            logger.warning(
-                "CGEventTap (active) creation failed — trying passive tap (Input Monitoring)..."
-            )
-            from Quartz import kCGEventTapOptionListenOnly
+            logger.warning("HID-level active tap failed — trying session-level active tap...")
             tap = CGEventTapCreate(
                 kCGSessionEventTap,
+                kCGHeadInsertEventTap,
+                kCGEventTapOptionDefault,
+                mask,
+                _callback,
+                None,
+            )
+            if tap is not None:
+                tap_description = "active tap at session level (Accessibility granted)"
+
+        # 3. HID-level listen-only tap
+        if tap is None:
+            logger.warning(
+                "Active tap creation failed (Accessibility permission not granted or not applied). "
+                "Trying HID-level listen-only tap (requires Input Monitoring permission)..."
+            )
+            tap = CGEventTapCreate(
+                kCGHIDEventTap,
                 kCGHeadInsertEventTap,
                 kCGEventTapOptionListenOnly,
                 mask,
                 _callback,
                 None,
             )
+            if tap is not None:
+                tap_description = "listen-only tap at HID level (Input Monitoring granted)"
 
         if tap is None:
             logger.warning(
-                "CGEventTap creation failed. Global hotkeys will not work. "
-                "Grant Accessibility permission in "
-                "System Settings > Privacy & Security > Accessibility, then restart."
+                "CGEventTap creation failed entirely. Global hotkeys will not work.\n"
+                "Grant one of the following in System Settings > Privacy & Security:\n"
+                "  • Accessibility  (preferred — allows active tap)\n"
+                "  • Input Monitoring (allows listen-only tap)\n"
+                "Then restart the app."
             )
             return
+
+        logger.info(f"CGEventTap created: {tap_description}.")
 
         source = CFMachPortCreateRunLoopSource(None, tap, 0)
         self._loop = CFRunLoopGetCurrent()
