@@ -26,18 +26,6 @@ class HotkeyListener:
         self._should_run = False
 
     def start(self):
-        # Check Accessibility permission — kCGEventTapOptionDefault requires it.
-        try:
-            import HIServices
-            if not HIServices.AXIsProcessTrusted():
-                logger.warning(
-                    "Accessibility permission not granted. "
-                    "Grant it in System Settings > Privacy & Security > Accessibility, "
-                    "then restart the app."
-                )
-        except Exception as e:
-            logger.warning(f"Could not check Accessibility permission: {e}")
-
         self._should_run = True
         logger.info("Starting Quartz CGEventTap hotkey listener...")
         threading.Thread(target=self._run_tap, daemon=True).start()

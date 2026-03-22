@@ -1,7 +1,7 @@
 import os
 import sys
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 import queue
 from src.utils.logger import logger
 from src.input.hotkeys import HotkeyListener
@@ -28,67 +28,24 @@ class AppWindow:
 
         self.audio_capture = None
         self.recognizer = None
-        self._accessibility_granted = True  # Checked after mainloop starts
 
         self.hotkeys = HotkeyListener(callback=lambda: self.root.after(0, self.toggle_recording))
         self.current_text = ""
         self.setup_ui()
 
         self.root.after(800, self._initialize_recognizer)
-        self.root.after(1500, self._safe_start_hotkeys)
+        self.root.after(1500, self._start_hotkeys)
         self.root.after(100, self.process_queue)
 
-    def _safe_start_hotkeys(self):
-        try:
-            import HIServices
-            if not HIServices.AXIsProcessTrusted():
-                self._accessibility_granted = False
-                logger.warning("Accessibility not granted — text injection will be disabled.")
-                self.status_label.config(
-                    text="Text injection disabled — Accessibility not granted",
-                    foreground="#B87352"
-                )
-                self.btn_access.pack(side="left", padx=5)
-        except Exception:
-            pass
+    def _start_hotkeys(self):
         try:
             self.hotkeys.start()
         except Exception as e:
             logger.error(f"Failed to start hotkeys: {e}")
             self.status_label.config(
-                text="Hotkeys Disabled — Check Accessibility in System Settings",
+                text="Hotkeys Disabled — check Input Monitoring in System Settings",
                 foreground="#B87352"
             )
-
-    def _prompt_accessibility_permission(self):
-        import subprocess
-        try:
-            real_path = os.path.realpath(sys.executable)
-        except Exception:
-            real_path = sys.executable
-
-        msg = (
-            "Voice2Text needs Accessibility permission to inject text into other apps.\n\n"
-            "Add this exact file to System Settings > Privacy & Security > Accessibility:\n\n"
-            f"{real_path}\n\n"
-            "Steps:\n"
-            "1. Click OK — System Settings > Accessibility will open\n"
-            "2. Click the '+' button\n"
-            "3. Press \u2318\u21e7G (Cmd+Shift+G) in the file picker\n"
-            "4. Paste the path above, press Enter, then click Open\n"
-            "5. Make sure the toggle next to it is ON\n"
-            "6. Quit and restart Voice2Text"
-        )
-        messagebox.showinfo("Accessibility Permission Required", msg)
-        subprocess.run([
-            "open",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        ], check=False)
-
-    def _ready_status(self):
-        if self._accessibility_granted:
-            return ("Status: Ready (Press Right Option)", "#A9ACA0")
-        return ("Text injection disabled — click 'Setup Access' to fix", "#B87352")
 
     def _initialize_recognizer(self):
         logger.info("Initializing Speech Recognizer...")
@@ -104,14 +61,14 @@ class AppWindow:
         if 'clam' in style.theme_names():
             style.theme_use('clam')
 
-        bg_color    = "#3A4B40"   # Midnight Sage
-        fg_color    = "#E2DED0"   # Champagne Dust
-        accent_color = "#B87352"  # Raw Terracotta
-        accent_hover = "#c98462"  # Raw Terracotta lighter
-        select_bg   = "#1B201D"   # Inky Obsidian
-        select_fg   = "#E2DED0"   # Champagne Dust
-        field_bg    = "#1B201D"   # Inky Obsidian
-        muted_fg    = "#A9ACA0"   # Pebble Grey
+        bg_color     = "#3A4B40"
+        fg_color     = "#E2DED0"
+        accent_color = "#B87352"
+        accent_hover = "#c98462"
+        select_bg    = "#1B201D"
+        select_fg    = "#E2DED0"
+        field_bg     = "#1B201D"
+        muted_fg     = "#A9ACA0"
 
         self.root.configure(bg=bg_color)
         style.configure(".", background=bg_color, foreground=fg_color,
@@ -160,9 +117,6 @@ class AppWindow:
         ctrl_frame.pack(fill="x", padx=10, pady=5)
         self.btn_toggle = ttk.Button(ctrl_frame, text="Start Recording", command=self.toggle_recording)
         self.btn_toggle.pack(side="left", padx=5)
-        # Setup Access button — shown only when Accessibility is not granted
-        self.btn_access = ttk.Button(ctrl_frame, text="Setup Access...", command=self._prompt_accessibility_permission)
-        # (not packed here — _safe_start_hotkeys shows it if needed)
         self.status_label = ttk.Label(ctrl_frame, text="Status: Ready (Press Right Option)", foreground="#A9ACA0")
         self.status_label.pack(side="left", padx=5)
 
@@ -201,6 +155,10 @@ class AppWindow:
         if sys.platform == 'darwin':
             os.system("afplay /System/Library/Sounds/Ping.aiff &")
 
+        # Send this window to the back so keyboard focus returns to the user's
+        # target application — pynput will then inject text there, not here.
+        self.root.after(50, self.root.lower)
+
         try:
             device_name = self.selected_device_name.get()
             device_id = self.available_devices.get(device_name)
@@ -209,7 +167,7 @@ class AppWindow:
             self.audio_capture = AudioCapture(device_id=device_id, callback=self.on_audio_data)
             self.audio_capture.start()
         except Exception as e:
-            logger.error(f"Error starting recognition: {e}", exc_info=True)
+            logger.error(f"Error starting recording: {e}", exc_info=True)
             self.is_recording = False
             self.btn_toggle.config(text="Start Recording")
             self.queue.put(("status", f"Error: {e}", "#B87352"))
@@ -233,8 +191,7 @@ class AppWindow:
             os.system("afplay /System/Library/Sounds/Pop.aiff &")
 
         self.queue.put(("final_stop", final_text))
-        status_text, status_color = self._ready_status()
-        self.queue.put(("status", status_text, status_color))
+        self.queue.put(("status", "Status: Ready (Press Right Option)", "#A9ACA0"))
 
     def on_audio_data(self, numpy_data, status):
         if status:
