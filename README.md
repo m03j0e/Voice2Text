@@ -70,9 +70,10 @@ Instead of using PyObjC's complex audio engine, we use `sounddevice` (based on P
 ### 2. Native Speech Recognition (`pyobjc-framework-Speech`)
 We instantiate Apple's `SFSpeechRecognizer`. The raw audio from `sounddevice` (captured as numpy arrays) is manually copied into `AVAudioPCMBuffer` objects in memory using a fast loop. These buffers are then fed into the `SFSpeechAudioBufferRecognitionRequest` object, which processes them in real-time.
 
-### 3. Global Inputs (`pynput`)
-- **Keyboard Listener**: Runs in a background thread to detect the `Right Option` key press globally, even when the app is minimized.
-- **Keyboard Controller**: Simulates keystrokes. It uses a "diffing" algorithm (`handle_typing`) to compare the new transcription with what was previously typed. If the recognizer changes its mind (e.g., correcting "weather" to "whether"), the app calculates the difference, sends valid **Backspace** taps, and types the new characters.
+### 3. Global Hotkey (`Quartz CGEventTap`)
+- **Keyboard Listener**: A `CGEventTap` (active tap) is created via the macOS Quartz event framework and runs on a dedicated background `CFRunLoop` thread. It detects the `Right Option` key (hardware keycode 61) globally, even when the app is minimized, by inspecting `kCGEventFlagsChanged` events without invoking any TSM (Carbon) APIs.
+- **Tap Resilience**: macOS can automatically disable a `CGEventTap` on sleep/wake, user-input interruption, or a callback timeout. The listener handles `kCGEventTapDisabledByTimeout` and `kCGEventTapDisabledByUserInput` events and immediately re-enables the tap. If the run loop exits unexpectedly (e.g., the tap source is invalidated), the listener thread automatically restarts after a 3-second delay.
+- **Keyboard Controller** (`pynput`): Text injection uses `pynput.keyboard.Controller`. It applies a "diffing" algorithm to compare new transcription text with what was previously typed. If the recognizer changes its prediction (e.g., correcting "weather" to "whether"), the app calculates the diff, sends the required **Backspace** taps, and types the new characters. AppleScript (`osascript`) is used as a fallback if `pynput` fails.
 
 ### 4. Text Processing
 The `remove_filler_words` function uses Regular Expressions (`re`) to strip out hesitation markers like "um", "uh", "so", and "like" before the text is displayed or typed.
@@ -86,10 +87,11 @@ The Voice2Text application relies on several system-level integrations (macOS ac
 *   **Fix**: Ensure no native macOS UI elements or framework initializations are moved out of the `root.after()` staggered loading sequences in `src/ui/app_window.py`. Additionally, ensure that imports for `sounddevice`, `pynput`, `Speech`, `Cocoa`, and `AVFoundation` are strictly contained *inside* the functions or classes that use them, not at the top-level of the file.
 
 ### 2. Hotkeys Not Working or Application Freezing
-*   **Cause**: The `pynput` keyboard listener requires specific permissions and thread handling on macOS.
+*   **Cause**: The `CGEventTap` hotkey listener requires **Accessibility** permission. macOS may also automatically disable the tap after sleep/wake cycles or other system events.
 *   **Fix**:
-    1. Ensure your Terminal (or the IDE/App running the script) has **Accessibility** permissions in macOS `System Settings -> Privacy & Security -> Accessibility`.
-    2. The listener must run in a background daemon thread (as currently implemented). Moving it to the main Tkinter thread will block the UI or crash the app.
+    1. Ensure your Terminal (or the Python executable in `venv/bin/python`) has **Accessibility** permissions in macOS `System Settings -> Privacy & Security -> Accessibility`.
+    2. The app auto-detects tap-disable events and re-enables the tap immediately. If it misses one, it will also auto-restart the listener thread within 3 seconds.
+    3. If hotkeys stop responding after a long sleep, wait a few seconds — the listener will restart itself. If it does not, quit and relaunch the app and confirm Accessibility is still granted.
 
 ### 3. Text Injection Failing (AppleScript Fallback Error)
 *   **Cause**: If `pynput` fails to inject text, the app attempts to use `osascript` (AppleScript) as a fallback. If both fail, it's a permissions issue.

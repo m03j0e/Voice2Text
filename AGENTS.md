@@ -20,7 +20,11 @@ The application heavily relies on native macOS APIs (`PyObjC`, `Speech`, `Cocoa`
 5.  **Module-Level Imports of Native Libraries:** Do NOT import native macOS libraries (`sounddevice`, `Speech`, `Cocoa`, `AVFoundation`, `pynput`) at the top level of any Python module. If a module containing such an import is imported before `Tkinter.mainloop()` starts (even just to access a utility function), it will trigger native API initialization and cause a `Trace/BPT trap: 5` crash. Always place these imports *inside* the functions or classes that use them.
 
 ## Background Threads and Daemons
-1.  **Pynput Hotkeys:** The `pynput.keyboard.Listener` MUST be started in a separate `daemon=True` thread (`threading.Thread(target=self._run_listener, daemon=True).start()`). Initializing the listener loop from the main Tkinter thread on macOS will block the UI. However, the `import pynput` statement MUST happen on the main thread before starting the background thread to prevent `BPT traps`.
+1.  **CGEventTap Hotkeys:** The hotkey listener uses `Quartz.CGEventTapCreate` (NOT pynput) running its own `CFRunLoop` on a dedicated `daemon=True` background thread (`HotkeyListener._run_tap`). All Quartz imports happen inside `_run_tap`, never at module level. Key stability behaviours:
+    - macOS auto-disables a tap on sleep/wake or callback timeout. The callback handles `kCGEventTapDisabledByTimeout` and `kCGEventTapDisabledByUserInput` by immediately calling `CGEventTapEnable(self.tap, True)`.
+    - `self.tap` is assigned **before** `CGEventTapEnable` is called so the re-enable path in the callback always has a valid reference.
+    - If the run loop exits with any result other than `kCFRunLoopRunTimedOut` (normal heartbeat) or `kCFRunLoopRunStopped` (intentional stop via `stop()`), the thread restarts itself after a 3-second delay as long as `_should_run` is `True`.
+    - `stop()` sets `_should_run = False` before calling `CFRunLoopStop` so the restart logic knows not to restart.
 2.  **AI Polishing:** AI calls (e.g., Google Gemini) are synchronous network operations. They must be dispatched to a background thread (`threading.Thread`) to prevent freezing the UI.
 
 ## Testing and CI Constraints
