@@ -2,17 +2,17 @@ import time
 import threading
 from src.utils.logger import logger
 
-# Right Option key hardware keycode (Quartz CGEvent keycode 61 = 0x3D)
+# Right Option key hardware keycode (Quartz / CGEvent)
 _RIGHT_OPTION_KEYCODE = 61
 
-# macOS sends these synthetic event types to the callback when a CGEventTap is
-# auto-disabled.  They are defined in CGEventTypes.h but are not always exported
-# by name in PyObjC, so we use the raw uint32 values as a fallback.
+# macOS sends these synthetic event types to a CGEventTap callback when the tap
+# is auto-disabled.  Use raw uint32 values as a fallback in case PyObjC doesn't
+# export the named constants.
 try:
     from Quartz import kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput
 except ImportError:
-    kCGEventTapDisabledByTimeout    = 0xFFFFFFFE
-    kCGEventTapDisabledByUserInput  = 0xFFFFFFFF
+    kCGEventTapDisabledByTimeout   = 0xFFFFFFFE
+    kCGEventTapDisabledByUserInput = 0xFFFFFFFF
 
 _TAP_DISABLED_EVENTS = {kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput}
 
@@ -27,8 +27,27 @@ class HotkeyListener:
 
     def start(self):
         self._should_run = True
-        logger.info("Starting Quartz CGEventTap hotkey listener...")
+        logger.info("Starting CGEventTap hotkey listener...")
         threading.Thread(target=self._run_tap, daemon=True).start()
+
+    def stop(self):
+        self._should_run = False
+        loop = self._loop
+        if loop is not None:
+            try:
+                from Quartz import CFRunLoopStop
+                CFRunLoopStop(loop)
+            except Exception as e:
+                logger.error(f"Error stopping hotkey listener: {e}")
+
+    def _trigger(self, source=""):
+        now = time.time()
+        if now - self.last_trigger_time > 0.3:
+            self.last_trigger_time = now
+            label = f" [{source}]" if source else ""
+            logger.info(f"Hotkey Toggle Triggered (Right Option){label}!")
+            if self.callback:
+                self.callback()
 
     def _run_tap(self):
         try:
@@ -39,6 +58,9 @@ class HotkeyListener:
                 CFRunLoopAddSource,
                 CFRunLoopGetCurrent,
                 CFRunLoopRunInMode,
+                CGEventSourceCreate,
+                CGEventSourceKeyState,
+                kCGEventSourceStateHIDSystemState,
                 kCGHIDEventTap,
                 kCGSessionEventTap,
                 kCGHeadInsertEventTap,
@@ -54,161 +76,98 @@ class HotkeyListener:
                 kCFRunLoopRunStopped,
             )
         except ImportError as e:
-            logger.error(f"Quartz not available for hotkey listener: {e}")
+            logger.error(f"Quartz not available: {e}")
             return
 
         def _callback(_proxy, event_type, event, _refcon):
             try:
-                # macOS disables the tap on sleep/wake, timeout, or permission changes.
-                # Re-enable immediately so hotkeys survive these events.
                 if event_type in _TAP_DISABLED_EVENTS:
                     reason = "timeout" if event_type == kCGEventTapDisabledByTimeout else "user-input"
-                    logger.warning(f"CGEventTap was auto-disabled ({reason}) — re-enabling...")
+                    logger.debug(f"CGEventTap disabled ({reason}) — re-enabling...")
                     if self.tap is not None:
                         CGEventTapEnable(self.tap, True)
+
+                    # macOS 26 disables the listen-only tap on each key event from
+                    # another process, consuming that event before our callback sees it.
+                    # When disabled by user-input, check the hardware state immediately —
+                    # if Right Option is still physically held, fire the hotkey now.
+                    if event_type == kCGEventTapDisabledByUserInput:
+                        try:
+                            src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState)
+                            if src and CGEventSourceKeyState(src, _RIGHT_OPTION_KEYCODE):
+                                self._trigger("recovered")
+                        except Exception:
+                            pass
                     return event
 
                 if event_type == kCGEventFlagsChanged:
                     keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
                     if keycode == _RIGHT_OPTION_KEYCODE:
                         flags = CGEventGetFlags(event)
-                        # Trigger on key-press (flag newly set), not release
                         if flags & kCGEventFlagMaskAlternate:
-                            now = time.time()
-                            if now - self.last_trigger_time > 0.3:
-                                self.last_trigger_time = now
-                                logger.info("Hotkey Toggle Triggered (Right Option)!")
-                                if self.callback:
-                                    self.callback()
+                            self._trigger()
             except Exception as e:
-                logger.error(f"Error in CGEventTap callback: {e}")
-            # Must return event unmodified to not block other applications
+                logger.error(f"CGEventTap callback error: {e}")
             return event
 
-        # Store reference to prevent GC while tap is alive
         self._callback_fn = _callback
+        mask = 1 << kCGEventFlagsChanged
 
-        mask = 1 << kCGEventFlagsChanged  # CGEventMaskBit(kCGEventFlagsChanged)
-
-        # --- Tap creation strategy ---
-        # We try taps in order from most global to least, stopping at the first success.
-        #
-        # IMPORTANT: kCGSessionEventTap + kCGEventTapOptionListenOnly is intentionally
-        # skipped as a fallback.  Without Input Monitoring permission macOS lets that
-        # creation succeed (returns non-None) but silently restricts delivery to events
-        # targeting the focused process — i.e. it only fires when Voice2Text is in focus.
-        # kCGHIDEventTap listen-only returns None when Input Monitoring is denied, which
-        # is a proper failure we can detect and report.
-        #
-        # Priority:
-        #   1. kCGHIDEventTap   active      (needs Accessibility)   — global, below session
-        #   2. kCGSessionEventTap active    (needs Accessibility)   — global, session level
-        #   3. kCGHIDEventTap   listen-only (needs Input Monitoring) — global, read-only
-
+        # Try taps from most-global to least.
+        # kCGSessionEventTap + listen-only is intentionally skipped: macOS lets
+        # creation succeed without Input Monitoring but silently restricts delivery
+        # to the focused process (the "in-focus-only" bug).
         tap = None
-        tap_description = None
+        desc = None
 
-        # 1. HID-level active tap
-        tap = CGEventTapCreate(
-            kCGHIDEventTap,
-            kCGHeadInsertEventTap,
-            kCGEventTapOptionDefault,
-            mask,
-            _callback,
-            None,
-        )
+        tap = CGEventTapCreate(kCGHIDEventTap, kCGHeadInsertEventTap,
+                               kCGEventTapOptionDefault, mask, _callback, None)
         if tap is not None:
-            tap_description = "active tap at HID level (Accessibility granted)"
+            desc = "HID active (Accessibility granted)"
 
-        # 2. Session-level active tap
         if tap is None:
-            logger.warning("HID-level active tap failed — trying session-level active tap...")
-            tap = CGEventTapCreate(
-                kCGSessionEventTap,
-                kCGHeadInsertEventTap,
-                kCGEventTapOptionDefault,
-                mask,
-                _callback,
-                None,
-            )
+            tap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap,
+                                   kCGEventTapOptionDefault, mask, _callback, None)
             if tap is not None:
-                tap_description = "active tap at session level (Accessibility granted)"
+                desc = "session active (Accessibility granted)"
 
-        # 3. HID-level listen-only tap
         if tap is None:
-            logger.warning(
-                "Active tap creation failed (Accessibility permission not granted or not applied). "
-                "Trying HID-level listen-only tap (requires Input Monitoring permission)..."
-            )
-            tap = CGEventTapCreate(
-                kCGHIDEventTap,
-                kCGHeadInsertEventTap,
-                kCGEventTapOptionListenOnly,
-                mask,
-                _callback,
-                None,
-            )
+            tap = CGEventTapCreate(kCGHIDEventTap, kCGHeadInsertEventTap,
+                                   kCGEventTapOptionListenOnly, mask, _callback, None)
             if tap is not None:
-                tap_description = "listen-only tap at HID level (Input Monitoring granted)"
+                desc = "HID listen-only (Input Monitoring granted)"
 
         if tap is None:
             logger.warning(
-                "CGEventTap creation failed entirely. Global hotkeys will not work.\n"
-                "Grant one of the following in System Settings > Privacy & Security:\n"
-                "  • Accessibility  (preferred — allows active tap)\n"
-                "  • Input Monitoring (allows listen-only tap)\n"
-                "Then restart the app."
+                "CGEventTap creation failed — global hotkeys disabled.\n"
+                "Grant Input Monitoring or Accessibility in System Settings > Privacy & Security."
             )
             return
 
-        logger.info(f"CGEventTap created: {tap_description}.")
-
+        logger.info(f"CGEventTap active: {desc}.")
         source = CFMachPortCreateRunLoopSource(None, tap, 0)
         self._loop = CFRunLoopGetCurrent()
         CFRunLoopAddSource(self._loop, source, kCFRunLoopDefaultMode)
-
-        # Assign self.tap BEFORE enabling so the disable-event handler in the
-        # callback can immediately call CGEventTapEnable(self.tap, True).
         self.tap = tap
         CGEventTapEnable(tap, True)
-        logger.info("CGEventTap listener running (global).")
 
         try:
             while True:
                 result = CFRunLoopRunInMode(kCFRunLoopDefaultMode, 1.0, False)
                 if result == kCFRunLoopRunStopped:
-                    # Intentional stop via stop() — clean exit, no restart.
                     break
                 if result != kCFRunLoopRunTimedOut:
-                    # kCFRunLoopRunFinished (1): the tap source was removed (e.g.
-                    # permission revoked).  Log and fall through to the restart path.
-                    logger.warning(
-                        f"CFRunLoop exited with unexpected result {result} "
-                        "(tap source may have been invalidated). "
-                        "Hotkey listener will restart."
-                    )
+                    logger.warning(f"CFRunLoop exited (result={result}), restarting listener.")
                     break
         except Exception as e:
-            logger.error(f"CFRunLoop error in hotkey listener: {e}")
+            logger.error(f"CFRunLoop error: {e}")
         finally:
             self._loop = None
             self.tap = None
             self._callback_fn = None
 
-        # Auto-restart if the thread died for any reason other than an explicit stop().
         if self._should_run:
-            logger.warning("Hotkey listener exited unexpectedly — restarting in 3 seconds...")
+            logger.warning("Hotkey listener exited unexpectedly — restarting in 3 s...")
             time.sleep(3)
             if self._should_run:
-                logger.info("Restarting hotkey listener...")
                 threading.Thread(target=self._run_tap, daemon=True).start()
-
-    def stop(self):
-        self._should_run = False
-        loop = self._loop
-        if loop is not None:
-            try:
-                from Quartz import CFRunLoopStop
-                CFRunLoopStop(loop)
-            except Exception as e:
-                logger.error(f"Error stopping hotkey listener: {e}")
