@@ -70,10 +70,9 @@ Instead of using PyObjC's complex audio engine, we use `sounddevice` (based on P
 ### 2. Native Speech Recognition (`pyobjc-framework-Speech`)
 We instantiate Apple's `SFSpeechRecognizer`. The raw audio from `sounddevice` (captured as numpy arrays) is manually copied into `AVAudioPCMBuffer` objects in memory using a fast loop. These buffers are then fed into the `SFSpeechAudioBufferRecognitionRequest` object, which processes them in real-time.
 
-### 3. Global Hotkey (`Quartz CGEventTap`)
-- **Keyboard Listener**: A `CGEventTap` (active tap) is created via the macOS Quartz event framework and runs on a dedicated background `CFRunLoop` thread. It detects the `Right Option` key (hardware keycode 61) globally, even when the app is minimized, by inspecting `kCGEventFlagsChanged` events without invoking any TSM (Carbon) APIs.
-- **Tap Resilience**: macOS can automatically disable a `CGEventTap` on sleep/wake, user-input interruption, or a callback timeout. The listener handles `kCGEventTapDisabledByTimeout` and `kCGEventTapDisabledByUserInput` events and immediately re-enables the tap. If the run loop exits unexpectedly (e.g., the tap source is invalidated), the listener thread automatically restarts after a 3-second delay.
-- **Keyboard Controller** (`pynput`): Text injection uses `pynput.keyboard.Controller`. It applies a "diffing" algorithm to compare new transcription text with what was previously typed. If the recognizer changes its prediction (e.g., correcting "weather" to "whether"), the app calculates the diff, sends the required **Backspace** taps, and types the new characters. AppleScript (`osascript`) is used as a fallback if `pynput` fails.
+### 3. Global Hotkey (`pynput`)
+- **Keyboard Listener**: A global listener is created via the `pynput` library. It detects the `Right Option` key (`Key.alt_r`) anywhere, regardless of window focus, making it simple and reliable.
+- **Keyboard Controller** (`pynput`): Text injection uses `pynput.keyboard.Controller`. It applies a \"diffing\" algorithm to compare new transcription text with what was previously typed. If the recognizer changes its prediction (e.g., correcting \"weather\" to \"whether\"), the app calculates the diff, sends the required **Backspace** taps, and types the new characters. AppleScript (`osascript`) is used as a fallback if `pynput` fails.
 
 ### 4. Text Processing
 The `remove_filler_words` function uses Regular Expressions (`re`) to strip out hesitation markers like "um", "uh", "so", and "like" before the text is displayed or typed.
@@ -87,12 +86,10 @@ The Voice2Text application relies on several system-level integrations (macOS ac
 *   **Fix**: Ensure no native macOS UI elements or framework initializations are moved out of the `root.after()` staggered loading sequences in `src/ui/app_window.py`. Additionally, ensure that imports for `sounddevice`, `pynput`, `Speech`, `Cocoa`, and `AVFoundation` are strictly contained *inside* the functions or classes that use them, not at the top-level of the file.
 
 ### 2. Hotkeys Not Working or Only Working When App is in Focus
-*   **Cause**: The `CGEventTap` listener requires the correct permission to receive global events. A common trap: `kCGSessionEventTap + listen-only` appears to succeed (macOS returns a non-None tap port) without Input Monitoring permission, but macOS silently restricts delivery to events targeting the focused process. The app avoids this by using `kCGHIDEventTap` (lowest level, fails fast with `None` when permission is denied) for the listen-only fallback.
+*   **Cause**: The application uses `pynput` for global hotkey listening, which hooks into macOS's Accessibility APIs. If the terminal or the IDE running the code lacks Accessibility permissions, it won't intercept the Right Option key when it is in the background.
 *   **Fix**:
-    1. Grant **Accessibility** to the exact binary shown in the startup dialog (`venv/bin/python` resolved to its real path) in `System Settings -> Privacy & Security -> Accessibility`. This is the preferred path — it enables an active tap that works globally.
-    2. If Accessibility cannot be granted, grant **Input Monitoring** instead (`System Settings -> Privacy & Security -> Input Monitoring`). The app will fall back to a HID-level listen-only tap which is also global.
-    3. After granting either permission, **restart the app** — permissions are checked at tap creation time.
-    4. The app auto-detects tap-disable events (sleep/wake) and re-enables immediately; if the run loop exits unexpectedly it restarts within 3 seconds.
+    1. Grant **Accessibility** to your IDE or Terminal (e.g., VS Code, iTerm, Terminal) in `System Settings -> Privacy & Security -> Accessibility`.
+    2. **Restart the app** after granting permissions.
 
 ### 3. Text Injection Failing (AppleScript Fallback Error)
 *   **Cause**: If `pynput` fails to inject text, the app attempts to use `osascript` (AppleScript) as a fallback. If both fail, it's a permissions issue.
