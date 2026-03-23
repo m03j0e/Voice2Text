@@ -5,10 +5,9 @@ from src.utils.logger import logger
 # Right Option key hardware keycode
 _RIGHT_OPTION_KEYCODE = 61
 
-# Seconds to wait before restarting the tap after an unexpected exit
+# Seconds to wait before retrying after tap creation fails
 _RESTART_DELAY = 3.0
 
-# Fallback values for tap-disabled constants in case PyObjC doesn't export them
 try:
     from Quartz import kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput
 except ImportError:
@@ -20,9 +19,12 @@ _TAP_DISABLED_EVENTS = {kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserI
 
 class HotkeyListener:
     """
-    Detects the Right Option key via CGEventTap (kCGEventTapOptionDefault at
-    kCGHIDEventTap).  Requires Accessibility permission granted in
-    System Settings → Privacy & Security → Accessibility.
+    Detects the Right Option key via a listen-only CGEventTap at kCGHIDEventTap.
+
+    Listen-only mode requires Input Monitoring permission (System Settings →
+    Privacy & Security → Input Monitoring).  It does NOT require Accessibility.
+    At kCGHIDEventTap level, listen-only receives all hardware key events
+    globally, regardless of which application has focus.
 
     Runs in a dedicated background thread — no conflict with Tkinter's mainloop.
     Auto-restarts if the tap dies unexpectedly (e.g. after sleep/wake).
@@ -36,17 +38,6 @@ class HotkeyListener:
         self._should_run = False
 
     def start(self):
-        try:
-            from HIServices import AXIsProcessTrusted
-            if not AXIsProcessTrusted():
-                logger.warning(
-                    "[hotkey] Accessibility permission NOT granted. "
-                    "Grant it in System Settings → Privacy & Security → Accessibility "
-                    "then restart the app."
-                )
-        except Exception as e:
-            logger.warning(f"[hotkey] Could not check Accessibility permission: {e}")
-
         self._should_run = True
         threading.Thread(target=self._run_tap, daemon=True).start()
 
@@ -81,7 +72,7 @@ class HotkeyListener:
                 CFRunLoopRunInMode,
                 kCGHIDEventTap,
                 kCGHeadInsertEventTap,
-                kCGEventTapOptionDefault,
+                kCGEventTapOptionListenOnly,
                 kCGEventFlagsChanged,
                 CGEventGetIntegerValueField,
                 CGEventGetFlags,
@@ -117,17 +108,16 @@ class HotkeyListener:
                 logger.error(f"[hotkey] callback error: {e}")
             return event
 
-        # Hold a reference so the callback is not garbage collected
         self._callback_fn = _callback
         mask = 1 << kCGEventFlagsChanged
 
         while self._should_run:
-            logger.info("[hotkey] Creating CGEventTap (kCGHIDEventTap / kCGEventTapOptionDefault)...")
+            logger.info("[hotkey] Creating CGEventTap (kCGHIDEventTap / kCGEventTapOptionListenOnly)...")
 
             tap = CGEventTapCreate(
                 kCGHIDEventTap,
                 kCGHeadInsertEventTap,
-                kCGEventTapOptionDefault,
+                kCGEventTapOptionListenOnly,
                 mask,
                 _callback,
                 None,
@@ -135,14 +125,13 @@ class HotkeyListener:
 
             if tap is None:
                 logger.error(
-                    "[hotkey] CGEventTapCreate returned None — Accessibility permission required. "
-                    "Grant it in System Settings → Privacy & Security → Accessibility."
+                    "[hotkey] CGEventTapCreate returned None — Input Monitoring permission required. "
+                    "Grant it in System Settings → Privacy & Security → Input Monitoring, "
+                    "then restart the app."
                 )
                 time.sleep(_RESTART_DELAY)
                 continue
 
-            # Assign to self.tap BEFORE enabling so the callback's re-enable call
-            # has a valid reference if a disable event arrives immediately.
             self.tap = tap
 
             source = CFMachPortCreateRunLoopSource(None, tap, 0)
@@ -151,9 +140,8 @@ class HotkeyListener:
             CFRunLoopAddSource(loop, source, kCFRunLoopDefaultMode)
             CGEventTapEnable(tap, True)
 
-            logger.info("[hotkey] CGEventTap active — listening for Right Option globally.")
+            logger.info("[hotkey] CGEventTap listen-only active — listening for Right Option globally.")
 
-            # Run the loop in 5-second ticks so we can check _should_run and log heartbeats.
             tick = 0
             result = kCFRunLoopRunTimedOut
             while self._should_run:
@@ -162,7 +150,6 @@ class HotkeyListener:
                 logger.debug(f"[hotkey] run loop tick #{tick}, result={result}")
                 if result == kCFRunLoopRunStopped:
                     break
-                # kCFRunLoopRunTimedOut (3) is normal — keep running
 
             self.tap = None
             self._loop = None
