@@ -1,3 +1,4 @@
+import os
 from src.output.base import OutputDestination
 from src.utils.logger import logger
 
@@ -48,17 +49,9 @@ class KeyboardInjector(OutputDestination):
             logger.debug("KeyboardInjector: text identical to last typed, skipping.")
             return
         
-        current_len = len(self.last_typed_text)
-        common_len = 0
-        min_len = min(current_len, len(text))
-
-        for i in range(min_len):
-            if self.last_typed_text[i] == text[i]:
-                common_len += 1
-            else:
-                break
-
-        backspaces_needed = current_len - common_len
+        common_prefix = os.path.commonprefix([self.last_typed_text, text])
+        common_len = len(common_prefix)
+        backspaces_needed = len(self.last_typed_text) - common_len
         controller = self._get_controller()
 
         if backspaces_needed > 0:
