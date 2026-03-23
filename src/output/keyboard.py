@@ -13,10 +13,11 @@ class KeyboardInjector(OutputDestination):
         import subprocess
         logger.debug(f"Attempting AppleScript fallback for: '{text}'")
         
-        escaped_text = text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\r')
-        script = f'tell application "System Events" to keystroke "{escaped_text}"'
+        # Use parameterized AppleScript to prevent code injection
+        script = 'on run argv\ntell application "System Events" to keystroke (item 1 of argv)\nend run'
+        normalized_text = text.replace('\n', '\r')
         try:
-            result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+            result = subprocess.run(["osascript", "-e", script, normalized_text], capture_output=True, text=True)
             if result.returncode != 0:
                 logger.error(f"AppleScript injection failed: {result.stderr.strip()}")
                 return False
@@ -68,8 +69,9 @@ class KeyboardInjector(OutputDestination):
             
             if not success:
                 import subprocess
-                script = f'tell application "System Events" to repeat {backspaces_needed} times\nkey code 51\nend repeat'
-                subprocess.run(["osascript", "-e", script])
+                # Use parameterized AppleScript for better security posture
+                script = 'on run argv\ntell application "System Events" to repeat (item 1 of argv as integer) times\nkey code 51\nend repeat\nend run'
+                subprocess.run(["osascript", "-e", script, str(backspaces_needed)])
 
         to_type = text[common_len:]
         if to_type:
