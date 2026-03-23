@@ -35,7 +35,6 @@ class HotkeyListener:
     def _poll(self):
         try:
             from Quartz import (
-                CGEventSourceCreate,
                 CGEventSourceKeyState,
                 kCGEventSourceStateHIDSystemState,
             )
@@ -43,16 +42,11 @@ class HotkeyListener:
             logger.error(f"Quartz not available — hotkey polling disabled: {e}")
             return
 
-        source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState)
-        if source is None:
-            logger.error("CGEventSourceCreate returned None — hotkey polling disabled.")
-            return
-
         logger.info("Hotkey listener active (polling CGEventSourceKeyState).")
         was_pressed = False
 
         while self._should_run:
-            is_pressed = bool(CGEventSourceKeyState(source, _RIGHT_OPTION_KEYCODE))
+            is_pressed = bool(CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, _RIGHT_OPTION_KEYCODE))
 
             if is_pressed and not was_pressed:
                 # Rising edge — Right Option just went down

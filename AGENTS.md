@@ -20,15 +20,9 @@ The application heavily relies on native macOS APIs (`PyObjC`, `Speech`, `Cocoa`
 5.  **Module-Level Imports of Native Libraries:** Do NOT import native macOS libraries (`sounddevice`, `Speech`, `Cocoa`, `AVFoundation`, `pynput`) at the top level of any Python module. If a module containing such an import is imported before `Tkinter.mainloop()` starts (even just to access a utility function), it will trigger native API initialization and cause a `Trace/BPT trap: 5` crash. Always place these imports *inside* the functions or classes that use them.
 
 ## Background Threads and Daemons
-1.  **CGEventTap Hotkeys:** The hotkey listener uses `Quartz.CGEventTapCreate` (NOT pynput) running its own `CFRunLoop` on a dedicated `daemon=True` background thread (`HotkeyListener._run_tap`). All Quartz imports happen inside `_run_tap`, never at module level. Key stability behaviours:
-    - macOS auto-disables a tap on sleep/wake or callback timeout. The callback handles `kCGEventTapDisabledByTimeout` and `kCGEventTapDisabledByUserInput` by immediately calling `CGEventTapEnable(self.tap, True)`.
-    - `self.tap` is assigned **before** `CGEventTapEnable` is called so the re-enable path in the callback always has a valid reference.
-    - If the run loop exits with any result other than `kCFRunLoopRunTimedOut` (normal heartbeat) or `kCFRunLoopRunStopped` (intentional stop via `stop()`), the thread restarts itself after a 3-second delay as long as `_should_run` is `True`.
-    - `stop()` sets `_should_run = False` before calling `CFRunLoopStop` so the restart logic knows not to restart.
-    - **CRITICAL — tap location / option fallback order**: `kCGSessionEventTap + kCGEventTapOptionListenOnly` is **intentionally skipped**. Without Input Monitoring permission, macOS lets that creation return non-None but silently restricts event delivery to the focused process only (in-focus-only bug). The correct order is:
-      1. `kCGHIDEventTap` active (Accessibility) → truly global
-      2. `kCGSessionEventTap` active (Accessibility) → truly global
-      3. `kCGHIDEventTap` listen-only (Input Monitoring) → returns `None` if denied (safe fail)
+1.  **CGEventSourceKeyState Polling Hotkeys:** The hotkey listener detects the Right Option key by polling `CGEventSourceKeyState` every 10 ms on a dedicated `daemon=True` background thread (`HotkeyListener._poll`). All Quartz imports happen inside `_poll`, never at module level. Key stability behaviours:
+    - `CGEventSourceKeyState` reads raw HID hardware state — it does NOT require Accessibility or Input Monitoring TCC permissions, and works regardless of which application currently has focus. This avoids macOS behavior where `CGEventTap` / `NSEvent` global monitors are silently restricted for ad-hoc-signed processes.
+    - **CRITICAL**: `CGEventSourceKeyState` expects an integer state ID (`kCGEventSourceStateHIDSystemState`), not a `CGEventSourceRef` object. Passing a `CGEventSourceRef` (like from `CGEventSourceCreate`) will cause a fatal `ValueError: depythonifying 'int', got 'CGEventSourceRef'` crash.
 2.  **AI Polishing:** AI calls (e.g., Google Gemini) are synchronous network operations. They must be dispatched to a background thread (`threading.Thread`) to prevent freezing the UI.
 
 ## Testing and CI Constraints
