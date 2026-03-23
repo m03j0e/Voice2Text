@@ -1,6 +1,5 @@
 pyobjc-framework-Speech
 pyobjc-framework-AVFoundation
 pyobjc-framework-Cocoa
-pynput
 sounddevice
 numpy

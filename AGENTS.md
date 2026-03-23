@@ -20,9 +20,13 @@ The application heavily relies on native macOS APIs (`PyObjC`, `Speech`, `Cocoa`
 5.  **Module-Level Imports of Native Libraries:** Do NOT import native macOS libraries (`sounddevice`, `Speech`, `Cocoa`, `AVFoundation`, `pynput`) at the top level of any Python module. If a module containing such an import is imported before `Tkinter.mainloop()` starts (even just to access a utility function), it will trigger native API initialization and cause a `Trace/BPT trap: 5` crash. Always place these imports *inside* the functions or classes that use them.
 
 ## Background Threads and Daemons
-1.  **CGEventSourceKeyState Polling Hotkeys:** The hotkey listener detects the Right Option key by polling `CGEventSourceKeyState` every 10 ms on a dedicated `daemon=True` background thread (`HotkeyListener._poll`). All Quartz imports happen inside `_poll`, never at module level. Key stability behaviours:
-    - `CGEventSourceKeyState` reads raw HID hardware state — it does NOT require Accessibility or Input Monitoring TCC permissions, and works regardless of which application currently has focus. This avoids macOS behavior where `CGEventTap` / `NSEvent` global monitors are silently restricted for ad-hoc-signed processes.
-    - **CRITICAL**: `CGEventSourceKeyState` expects an integer state ID (`kCGEventSourceStateHIDSystemState`), not a `CGEventSourceRef` object. Passing a `CGEventSourceRef` (like from `CGEventSourceCreate`) will cause a fatal `ValueError: depythonifying 'int', got 'CGEventSourceRef'` crash.
+1.  **CGEventTap Hotkeys:** The hotkey listener detects the Right Option key (hardware keycode 61) via `CGEventTapCreate` using `kCGHIDEventTap` / `kCGEventTapOptionDefault`. All Quartz imports happen inside `_run_tap`, never at module level. Key stability behaviours:
+    - **Requires Accessibility permission** in System Settings → Privacy & Security → Accessibility. `CGEventTapCreate` returns `None` without it — the listener logs an error and retries every 3 s.
+    - **`CGEventSourceKeyState` is NOT global in macOS 26.** Diagnostic testing confirmed it returns `False` for all keypresses from other processes when Voice2Text is backgrounded. Do NOT use it as a polling mechanism or fallback.
+    - **`pynput` is NOT a dependency and must not be re-added.** It triggers a `Trace/BPT trap: 5` crash in macOS 26 via `TISGetInputSourceProperty` called from a background thread.
+    - **NSEvent global monitor must not be used.** PyObjC dispatches it on the Cocoa main thread, which conflicts with Tkinter's GIL management in Python 3.14.
+    - The tap auto-restarts after unexpected death (sleep/wake, tap timeout). `self.tap` is assigned before `CGEventTapEnable` so the callback's re-enable call always has a valid reference.
+    - **Verification gate:** Any change to the hotkey mechanism must be tested with the app backgrounded behind another app and Right Option pressed. The `debug.log` must show `kCGEventFlagsChanged → Right Option DOWN` and `Hotkey Toggle Triggered` lines. Do not merge a fix that only works when Voice2Text is the focused app.
 2.  **AI Polishing:** AI calls (e.g., Google Gemini) are synchronous network operations. They must be dispatched to a background thread (`threading.Thread`) to prevent freezing the UI.
 
 ## Testing and CI Constraints
