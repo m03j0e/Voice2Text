@@ -70,6 +70,8 @@ class HotkeyListener:
                 CFRunLoopAddSource,
                 CFRunLoopGetCurrent,
                 CFRunLoopRunInMode,
+                CGEventSourceKeyState,
+                kCGEventSourceStateHIDSystemState,
                 kCGHIDEventTap,
                 kCGHeadInsertEventTap,
                 kCGEventTapOptionListenOnly,
@@ -93,6 +95,22 @@ class HotkeyListener:
                     logger.warning(f"[hotkey] CGEventTap disabled ({reason}) — re-enabling")
                     if self.tap is not None:
                         CGEventTapEnable(self.tap, True)
+
+                    # When disabled by user-input, another process generated a key event.
+                    # Check immediately whether Right Option is still physically held.
+                    # This is the ONLY moment we can attempt recovery without full
+                    # Input Monitoring permission — we're inside a kernel-invoked callback.
+                    if event_type == kCGEventTapDisabledByUserInput:
+                        try:
+                            hw = bool(CGEventSourceKeyState(
+                                kCGEventSourceStateHIDSystemState,
+                                _RIGHT_OPTION_KEYCODE,
+                            ))
+                            logger.debug(f"[hotkey] kCGEventTapDisabledByUserInput: CGEventSourceKeyState(61)={hw}")
+                            if hw:
+                                self._trigger()
+                        except Exception as hw_err:
+                            logger.debug(f"[hotkey] CGEventSourceKeyState in callback failed: {hw_err}")
                     return event
 
                 if event_type == kCGEventFlagsChanged:
